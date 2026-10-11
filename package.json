@@ -1,0 +1,59 @@
+{
+  "name": "mbkutils",
+  "version": "1.0.0",
+  "description": "MBKTech's shared utilities, response formatters, handlebars helpers, and UI components for Node.js applications.",
+  "main": "index.js",
+  "type": "module",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./*": "./*"
+  },
+  "scripts": {
+    "publish": "node scripts/publish.js",
+    "test": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MIbnEKhalid/mbkutils.git"
+  },
+  "keywords": [
+    "mbktech",
+    "utilities",
+    "helpers",
+    "handlebars",
+    "express",
+    "response-formatter",
+    "logger",
+    "error-handler"
+  ],
+  "author": "Muhammad Bin Khalid <support@mbktech.org> <chmuhammadbinkhalid28@gmail.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/MIbnEKhalid/mbkutils#readme",
+  "files": [
+    "src",
+    "public",
+    "views",
+    "index.d.ts",
+    "index.js",
+    "LICENSE",
+    "package.json",
+    "README.md"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "dependencies": {
+    "debug": "^4.4.3",
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "express-handlebars": "^9.0.2",
+    "express-rate-limit": "^8.7.1"
+  },
+  "devDependencies": {
+    "vitest": "5.0.3"
+  }
+}

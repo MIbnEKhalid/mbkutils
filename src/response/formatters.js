@@ -171,7 +171,7 @@ export const renderError = (res, req, { code, error, message, page, pagename, de
   const appName = app || (process.env.APP_NAME || "mbktech");
   const appVersion = version || (process.env.npm_package_version || "1.0.0");
 
-  return res.render("Error/dError.hbs", {
+  return res.render("Error/mbkutils_dError.hbs", {
     layout: false,
     code,
     error,

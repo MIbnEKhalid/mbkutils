@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 
-{{> head pageCode=code pageError=error ogUrl="/error"}}
+{{> mbkutils_head pageCode=code pageError=error ogUrl="/error"}}
 
 <body>
-  {{> header}}
+  {{> mbkutils_header}}
 
   <section class="login-container">
-    {{> backgroundElements}}
+    {{> mbkutils_backgroundElements}}
 
     <div class="auth-card error-page-box" role="region" aria-label="Error Notice">
       <div class="error-hero-icon {{#if (eq code 500)}}is-5xx{{else}}{{#if (eq code 404)}}is-4xx{{/if}}{{/if}}" aria-hidden="true">
@@ -93,7 +93,7 @@
     </div>
   </section>
 
-  {{> versionInfo}}
+  {{> mbkutils_versionInfo}}
 
   <script>
     document.addEventListener('DOMContentLoaded', () => {

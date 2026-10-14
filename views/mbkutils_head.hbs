@@ -21,13 +21,13 @@
     <meta property="og:url" content="{{#if ogUrl}}{{ogUrl}}{{else}}/mbkauthe/login{{/if}}">
     <link rel="canonical" href="{{#if ogUrl}}{{ogUrl}}{{else}}/mbkauthe/login{{/if}}">
     <title>{{#if pageTitle}}{{pageTitle}}{{else}}{{#if pageCode}}{{pageCode}}{{/if}}{{#if pageError}} - {{pageError}}{{/if}}{{/if}} | MBK Tech Portal</title>
-    <link rel="icon" type="image/x-icon" href="/icon.svg">
+    <link rel="icon" type="image/x-icon" href="/icon.svg{{acachebust}}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.lineicons.com/4.0/lineicons.css">
-    {{> sharedStyles}}
+    {{> mbkutils_sharedStyles}}
     {{#if extraStyles}}{{{extraStyles}}}{{/if}}
-    <script src="/mbkauthe/main.js{{cacheBust}}" defer></script>
+    <script src="/mbkauthe/main.js{{acachebust}}" defer></script>
 </head>

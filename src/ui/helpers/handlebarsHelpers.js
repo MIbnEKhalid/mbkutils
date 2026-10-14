@@ -1,6 +1,6 @@
-/**
- * MBKUtils — Shared Handlebars Helpers for MBK Ecosystem
- */
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   toISOString,
@@ -17,6 +17,167 @@ import {
   isOverdue,
   formatDuration,
 } from "../../utils/dateTime.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+let cachedParentVersion = null;
+let cachedMbkutilsVersion = null;
+
+/**
+ * Dynamically resolves the parent project's version from package.json without hardcoding.
+ * Caches the version in memory for high-performance Handlebars rendering.
+ * @param {string} [explicitRootDir]
+ * @returns {string}
+ */
+export function resolveParentProjectVersion(explicitRootDir) {
+  if (process.env.APP_VERSION) {
+    return process.env.APP_VERSION;
+  }
+  if (cachedParentVersion && !explicitRootDir) {
+    return cachedParentVersion;
+  }
+
+  const searchDirs = [];
+  if (explicitRootDir) {
+    searchDirs.push(explicitRootDir);
+  }
+  if (typeof process !== "undefined" && process.cwd) {
+    searchDirs.push(process.cwd());
+  }
+
+  for (const startDir of searchDirs) {
+    let curr = path.resolve(startDir);
+    while (curr) {
+      const pkgPath = path.join(curr, "package.json");
+      try {
+        if (fs.existsSync(pkgPath)) {
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+          if (pkg && typeof pkg.version === "string") {
+            cachedParentVersion = pkg.version;
+            return pkg.version;
+          }
+        }
+      } catch {
+        // Continue searching parent directories
+      }
+      const parent = path.dirname(curr);
+      if (parent === curr) break;
+      curr = parent;
+    }
+  }
+
+  const fallback =
+    (typeof process !== "undefined" && (process.env.npm_package_version || process.env.APP_VERSION)) ||
+    "1.0.0";
+  cachedParentVersion = fallback;
+  return fallback;
+}
+
+/**
+ * Sets the cached parent project version (e.g. called from setupViewEngine).
+ * @param {string} version
+ */
+export function setParentProjectVersion(version) {
+  if (typeof version === "string" && version) {
+    cachedParentVersion = version;
+  }
+}
+
+/**
+ * Resolves the version of mbkutils itself from its package.json.
+ * @returns {string}
+ */
+export function resolvePackageVersion() {
+  if (cachedMbkutilsVersion) return cachedMbkutilsVersion;
+  try {
+    const pkgPath = path.resolve(__dirname, "../../../package.json");
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+      if (pkg && typeof pkg.version === "string") {
+        cachedMbkutilsVersion = pkg.version;
+        return pkg.version;
+      }
+    }
+  } catch {}
+  cachedMbkutilsVersion = "1.0.0";
+  return cachedMbkutilsVersion;
+}
+
+const packageVersionsRegistry = new Map();
+
+/**
+ * Registers or overrides a package's version for cache-busting.
+ * @param {string} pkgName
+ * @param {string} version
+ */
+export function registerPackageVersion(pkgName, version) {
+  if (typeof pkgName === "string" && typeof version === "string" && version) {
+    packageVersionsRegistry.set(pkgName.toLowerCase().trim(), version);
+  }
+}
+
+/**
+ * Retrieves the version for a given package (e.g. "mbkauthe", "mbkbucket", "mbkutils").
+ * Automatically inspects node_modules or package locations if not already cached.
+ * @param {string} [pkgName]
+ * @returns {string}
+ */
+export function getPackageVersion(pkgName) {
+  if (!pkgName || typeof pkgName !== "string") {
+    return resolvePackageVersion();
+  }
+  const normalized = pkgName.toLowerCase().trim();
+  if (packageVersionsRegistry.has(normalized)) {
+    return packageVersionsRegistry.get(normalized);
+  }
+
+  // Alias mappings
+  const aliases = {
+    auth: "mbkauthe",
+    mbkauth: "mbkauthe",
+    bucket: "mbkbucket",
+    utils: "mbkutils",
+  };
+  const canonical = aliases[normalized] || normalized;
+  if (packageVersionsRegistry.has(canonical)) {
+    return packageVersionsRegistry.get(canonical);
+  }
+
+  if (canonical === "mbkutils") {
+    const v = resolvePackageVersion();
+    packageVersionsRegistry.set("mbkutils", v);
+    return v;
+  }
+
+  // Auto-detect package.json in node_modules or adjacent directories
+  const searchRoots = [
+    typeof process !== "undefined" && process.cwd ? process.cwd() : null,
+    path.resolve(__dirname, "../../../.."),
+  ].filter(Boolean);
+
+  for (const root of searchRoots) {
+    const candidatePaths = [
+      path.join(root, "node_modules", canonical, "package.json"),
+      path.join(root, "..", canonical, "package.json"),
+    ];
+    for (const p of candidatePaths) {
+      try {
+        if (fs.existsSync(p)) {
+          const parsed = JSON.parse(fs.readFileSync(p, "utf-8"));
+          if (parsed && typeof parsed.version === "string") {
+            packageVersionsRegistry.set(canonical, parsed.version);
+            return parsed.version;
+          }
+        }
+      } catch {}
+    }
+  }
+
+  const fallback = resolvePackageVersion();
+  packageVersionsRegistry.set(canonical, fallback);
+  return fallback;
+}
 
 const HTML_ESCAPE_MAP = {
   "&": "&amp;",
@@ -180,8 +341,37 @@ export const commonHandlebarsHelpers = {
     return `${req.protocol || "https"}://${(typeof req.get === "function" ? req.get("host") : req.host) || "mbktech.org"}${path || ""}`;
   },
   conditionalEnv: (trueResult, falseResult) => (process.env.localenv ? trueResult : falseResult),
+  // Parent project cache busting helper (reads parent project package.json.version dynamically)
   cacheBust: (version) => {
-    const v = version && typeof version === "string" ? version : (process.env.APP_VERSION || process.env.npm_package_version || "1.0.0");
+    const v = version && typeof version === "string" ? version : resolveParentProjectVersion();
+    return `?v=${v}`;
+  },
+
+  // Smart package cache busting helper:
+  // - Supports package name: {{cachebust "mbkauthe"}}, {{cachebust "mbkbucket"}}, {{cachebust "mbkutils"}}
+  // - Supports direct version: {{cachebust "2.0.0"}}
+  // - Defaults to package version if called without arguments: {{cachebust}}
+  cachebust: (target, maybeVersion) => {
+    if (typeof target === "string" && target.length > 0) {
+      if (/^\d+\./.test(target)) {
+        return `?v=${target}`;
+      }
+      return `?v=${getPackageVersion(target)}`;
+    }
+    return `?v=${resolvePackageVersion()}`;
+  },
+
+  // Dedicated package helpers (differing by 1 character prefix, guaranteeing zero collision between packages)
+  acachebust: (version) => {
+    const v = version && typeof version === "string" ? version : getPackageVersion("mbkauthe");
+    return `?v=${v}`;
+  },
+  bcachebust: (version) => {
+    const v = version && typeof version === "string" ? version : getPackageVersion("mbkbucket");
+    return `?v=${v}`;
+  },
+  ucachebust: (version) => {
+    const v = version && typeof version === "string" ? version : getPackageVersion("mbkutils");
     return `?v=${v}`;
   },
 

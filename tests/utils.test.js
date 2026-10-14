@@ -171,13 +171,30 @@ describe("Handlebars Helpers", () => {
     expect(commonHandlebarsHelpers.gt(10, 5)).toBe(true);
   });
 
-  it("formats dates, timestamps and cacheBust", () => {
+  it("formats dates, timestamps, cacheBust (parent) and cachebust (package)", () => {
     expect(commonHandlebarsHelpers.formatDate("2026-01-01T00:00:00Z")).toBeDefined();
     expect(commonHandlebarsHelpers.formatDate("")).toBe("N/A");
     expect(commonHandlebarsHelpers.formatDateOnly("2026-01-01T00:00:00Z")).toContain("2026");
     expect(commonHandlebarsHelpers.formatDateOnly("")).toBe("N/A");
+    // Explicit override
     expect(commonHandlebarsHelpers.cacheBust("2.4.0")).toBe("?v=2.4.0");
-    expect(commonHandlebarsHelpers.cacheBust()).toMatch(/^\?v=/);
+    expect(commonHandlebarsHelpers.cachebust("3.1.0")).toBe("?v=3.1.0");
+    // Parent project dynamic package.json version
+    expect(commonHandlebarsHelpers.cacheBust()).toMatch(/^\?v=\d+\.\d+\.\d+/);
+    // Package cachebust helper (1 char different from parent project helper)
+    expect(commonHandlebarsHelpers.cachebust()).toMatch(/^\?v=\d+\.\d+\.\d+/);
+    // Package argument in cachebust
+    commonHandlebarsHelpers.acachebust();
+    expect(commonHandlebarsHelpers.cachebust("mbkauthe")).toMatch(/^\?v=\d+\.\d+\.\d+/);
+    expect(commonHandlebarsHelpers.cachebust("mbkbucket")).toMatch(/^\?v=\d+\.\d+\.\d+/);
+    expect(commonHandlebarsHelpers.cachebust("mbkutils")).toMatch(/^\?v=\d+\.\d+\.\d+/);
+    // Dedicated package helpers
+    expect(commonHandlebarsHelpers.acachebust()).toMatch(/^\?v=\d+\.\d+\.\d+/);
+    expect(commonHandlebarsHelpers.bcachebust()).toMatch(/^\?v=\d+\.\d+\.\d+/);
+    expect(commonHandlebarsHelpers.ucachebust()).toMatch(/^\?v=\d+\.\d+\.\d+/);
+    expect(commonHandlebarsHelpers.acachebust("6.0.0")).toBe("?v=6.0.0");
+    expect(commonHandlebarsHelpers.bcachebust("4.0.0")).toBe("?v=4.0.0");
+    expect(commonHandlebarsHelpers.ucachebust("1.0.0")).toBe("?v=1.0.0");
   });
 
   it("extracts device and browser metadata", () => {
@@ -303,6 +320,8 @@ describe("View Engine Setup (setupViewEngine)", () => {
     expect(result.hbs).toBeDefined();
     expect(result.helpers.customTestHelper()).toBe("custom");
     expect(result.helpers.eq("a", "a")).toBe(true);
+    expect(result.helpers.cacheBust()).toMatch(/^\?v=\d+\.\d+\.\d+/);
+    expect(result.helpers.cachebust()).toMatch(/^\?v=\d+\.\d+\.\d+/);
     expect(result.viewsDirs.length).toBeGreaterThan(0);
     expect(app.get("view engine")).toBe("hbs");
   });
@@ -373,5 +392,25 @@ describe("Standardized Date & Time Utilities", () => {
     expect(formatDuration(50)).toBe("50.00 ms");
     expect(formatDuration(2500)).toBe("2.50 s");
     expect(formatDuration("bad")).toBe("Invalid duration");
+  });
+});
+
+describe("View Engine Partials Namespacing", () => {
+  it("registers mbkutils partials with mbkutils_ prefix without polluting generic names", () => {
+    const res = setupViewEngine(null, { rootDir: process.cwd() });
+    const partials = res.handlebars.partials;
+
+    // Must have mbkutils-prefixed partials
+    expect(partials.mbkutils_header).toBeDefined();
+    expect(partials.mbkutils_head).toBeDefined();
+    expect(partials.mbkutils_showmessage).toBeDefined();
+    expect(partials.mbkutils_backgroundElements).toBeDefined();
+    expect(partials.mbkutils_versionInfo).toBeDefined();
+    expect(partials.mbkutils_sharedStyles).toBeDefined();
+
+    // Must NOT register un-namespaced generic names that collide with host apps
+    expect(partials.header).toBeUndefined();
+    expect(partials.head).toBeUndefined();
+    expect(partials.showmessage).toBeUndefined();
   });
 });

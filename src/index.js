@@ -33,6 +33,11 @@ export {
 // 3. Handlebars & UI Helpers, View Engine & Paths
 export {
   commonHandlebarsHelpers,
+  resolveParentProjectVersion,
+  setParentProjectVersion,
+  resolvePackageVersion,
+  registerPackageVersion,
+  getPackageVersion,
 } from "./ui/helpers/handlebarsHelpers.js";
 
 export {
@@ -110,7 +115,14 @@ import { isJsonRequest } from "./response/contentNegotiation.js";
 import { getUserContext, sanitizeErrorDetails, sendSuccess, sendError, renderError, renderPage } from "./response/formatters.js";
 import { createErrorHandler, createNotFoundHandler, proxycall } from "./response/handlers.js";
 import { createRateLimiter } from "./middleware/rateLimiter.js";
-import { commonHandlebarsHelpers } from "./ui/helpers/handlebarsHelpers.js";
+import {
+  commonHandlebarsHelpers,
+  resolveParentProjectVersion,
+  setParentProjectVersion,
+  resolvePackageVersion,
+  registerPackageVersion,
+  getPackageVersion,
+} from "./ui/helpers/handlebarsHelpers.js";
 import { setupViewEngine } from "./ui/viewEngine.js";
 import { viewsDir, publicDir, mbkutilsViewsDir, mbkutilsPublicDir } from "./ui/paths.js";
 import {
@@ -160,6 +172,11 @@ export const mbkutils = {
   proxycall,
   createRateLimiter,
   commonHandlebarsHelpers,
+  resolveParentProjectVersion,
+  setParentProjectVersion,
+  resolvePackageVersion,
+  registerPackageVersion,
+  getPackageVersion,
   setupViewEngine,
   viewsDir,
   publicDir,

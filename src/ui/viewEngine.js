@@ -6,24 +6,40 @@ import path from "node:path";
 import fs from "node:fs";
 import { create, engine } from "express-handlebars";
 import { mbkutilsViewsDir } from "./paths.js";
-import { commonHandlebarsHelpers } from "./helpers/handlebarsHelpers.js";
+import {
+  commonHandlebarsHelpers,
+  resolveParentProjectVersion,
+  setParentProjectVersion,
+} from "./helpers/handlebarsHelpers.js";
+
+function registerPartialsFromDir(handlebarsInstance, baseDir, currentDir = baseDir) {
+  if (!fs.existsSync(currentDir)) return;
+  try {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        registerPartialsFromDir(handlebarsInstance, baseDir, fullPath);
+      } else if (entry.isFile() && entry.name.endsWith(".hbs")) {
+        const relativePath = path.relative(baseDir, fullPath).replace(/\\/g, "/");
+        const partialName = relativePath.replace(/\.hbs$/, "");
+        const content = fs.readFileSync(fullPath, "utf-8");
+        handlebarsInstance.registerPartial(partialName, content);
+        const baseName = entry.name.replace(/\.hbs$/, "");
+        if (baseName !== partialName && !handlebarsInstance.partials?.[baseName]) {
+          handlebarsInstance.registerPartial(baseName, content);
+        }
+      }
+    }
+  } catch {
+    // Continue if reading fails
+  }
+}
 
 function registerPartialsFromDirs(handlebarsInstance, dirs) {
   if (!handlebarsInstance || typeof handlebarsInstance.registerPartial !== "function") return;
   for (const dir of dirs) {
-    if (!fs.existsSync(dir)) continue;
-    try {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isFile() && entry.name.endsWith(".hbs")) {
-          const name = entry.name.replace(/\.hbs$/, "");
-          const content = fs.readFileSync(path.join(dir, entry.name), "utf-8");
-          handlebarsInstance.registerPartial(name, content);
-        }
-      }
-    } catch {
-      // Continue if any directory reading fails
-    }
+    registerPartialsFromDir(handlebarsInstance, dir);
   }
 }
 
@@ -35,6 +51,9 @@ function registerPartialsFromDirs(handlebarsInstance, dirs) {
  */
 export function setupViewEngine(app, options = {}) {
   const rootDir = options.rootDir || process.cwd();
+  const parentVersion = resolveParentProjectVersion(rootDir);
+  setParentProjectVersion(parentVersion);
+
   const viewsDir = options.viewsDir || path.join(rootDir, "views");
   const extname = options.extname || ".hbs";
   const ext = extname.startsWith(".") ? extname : `.${extname}`;
@@ -76,6 +95,10 @@ export function setupViewEngine(app, options = {}) {
   // Merge helpers
   const mergedHelpers = {
     ...commonHandlebarsHelpers,
+    cacheBust: (version) => {
+      const v = version && typeof version === "string" ? version : parentVersion;
+      return `?v=${v}`;
+    },
     ...(options.helpers || {}),
   };
 

@@ -130,6 +130,11 @@ export declare function createRateLimiter(options?: RateLimiterOptions): (req: R
 // ===========================================================================
 
 export declare const commonHandlebarsHelpers: Record<string, any>;
+export declare function resolveParentProjectVersion(explicitRootDir?: string): string;
+export declare function setParentProjectVersion(version: string): void;
+export declare function resolvePackageVersion(): string;
+export declare function registerPackageVersion(pkgName: string, version: string): void;
+export declare function getPackageVersion(pkgName?: string): string;
 
 export interface SetupViewEngineOptions {
   rootDir?: string;
@@ -249,6 +254,11 @@ export interface MbkUtils {
   proxycall: typeof proxycall;
   createRateLimiter: typeof createRateLimiter;
   commonHandlebarsHelpers: Record<string, any>;
+  resolveParentProjectVersion: typeof resolveParentProjectVersion;
+  setParentProjectVersion: typeof setParentProjectVersion;
+  resolvePackageVersion: typeof resolvePackageVersion;
+  registerPackageVersion: typeof registerPackageVersion;
+  getPackageVersion: typeof getPackageVersion;
   setupViewEngine: typeof setupViewEngine;
   viewsDir: string;
   publicDir: string;

@@ -6,11 +6,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { create, engine } from "express-handlebars";
 import { mbkutilsViewsDir } from "./paths.js";
-import {
-  commonHandlebarsHelpers,
-  resolveParentProjectVersion,
-  setParentProjectVersion,
-} from "./helpers/handlebarsHelpers.js";
+import { commonHandlebarsHelpers, resolveParentProjectVersion, setParentProjectVersion } from "./helpers/handlebarsHelpers.js";
 
 function registerPartialsFromDir(handlebarsInstance, baseDir, currentDir = baseDir) {
   if (!fs.existsSync(currentDir)) return;

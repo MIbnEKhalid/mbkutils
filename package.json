@@ -1,6 +1,6 @@
 {
   "name": "mbkutils",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "MBKTech's shared utilities, response formatters, handlebars helpers, and UI components for Node.js applications.",
   "main": "index.js",
   "type": "module",

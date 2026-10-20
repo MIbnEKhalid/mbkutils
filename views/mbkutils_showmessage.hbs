@@ -175,14 +175,14 @@ body.blur-active {
     width: 90%;
     max-width: 420px;
     box-shadow: 0 20px 40px -12px rgba(15, 42, 42, 0.2), 0 0 0 1px rgba(15, 118, 110, 0.08);
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.95);
     transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     overflow: hidden;
     font-family: var(--font-sans, "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
 }
 
 .showMessageOverlay.active .messageModal {
-    transform: scale(1) translateY(0);
+    transform: scale(1);
 }
 
 .messageHeader {
@@ -301,7 +301,6 @@ body.blur-active {
 .btn-message-action:hover {
     background: #0d635c;
     box-shadow: 0 4px 12px rgba(15, 118, 110, 0.25);
-    transform: translateY(-1px);
 }
 
 .btn-message-action:focus-visible {

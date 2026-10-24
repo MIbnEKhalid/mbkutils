@@ -297,7 +297,93 @@ export interface MbkUtils {
   isExpired: typeof isExpired;
   isOverdue: typeof isOverdue;
   formatDuration: typeof formatDuration;
+  BlockKit: typeof BlockKit;
+  ServiceMessenger: typeof ServiceMessenger;
+  serviceMessenger: ServiceMessenger;
 }
+
+export interface BlockKitBlock {
+  type: string;
+  text?: string;
+  fields?: Array<{ label: string; value: string }>;
+  elements?: any[];
+}
+
+export declare const BlockKit: {
+  header(text: string): BlockKitBlock;
+  section(text: string, fields?: Array<{ label: string; value: string }>): BlockKitBlock;
+  fields(fieldsArray: Array<{ label: string; value: string }>): BlockKitBlock;
+  divider(): BlockKitBlock;
+  context(elements: Array<string | { type: string; text: string }>): BlockKitBlock;
+  actions(elements: Array<{ text: string; url?: string | null; action_id?: string | null; style?: "primary" | "danger" | "default" }>): BlockKitBlock;
+};
+
+export interface ServiceMessengerOptions {
+  baseUrl?: string;
+  apiKey?: string;
+  token?: string;
+  defaultChannel?: string;
+  timeout?: number;
+}
+
+export declare class ServiceMessenger {
+  baseUrl: string;
+  token: string | null;
+  defaultChannel: string;
+  timeout: number;
+  constructor(options?: ServiceMessengerOptions);
+  setToken(token: string): this;
+  setBaseUrl(url: string): this;
+  dispatch(options: {
+    channel?: string | null;
+    channelKey?: string | null;
+    title?: string | null;
+    content?: string;
+    blocks?: BlockKitBlock[] | null;
+    priority?: "low" | "normal" | "high" | "urgent";
+    idempotencyKey?: string | null;
+    senderName?: string | null;
+    mediaUrl?: string | null;
+    mediaMeta?: any;
+  }): Promise<any>;
+  sendCard(options: {
+    channel?: string;
+    title?: string;
+    content?: string;
+    blocks?: BlockKitBlock[];
+    priority?: "low" | "normal" | "high" | "urgent";
+    idempotencyKey?: string | null;
+    senderName?: string | null;
+  }): Promise<any>;
+  sendAlert(options: {
+    channel?: string;
+    title?: string;
+    message: string;
+    type?: "info" | "warning" | "error" | "success";
+    priority?: "low" | "normal" | "high" | "urgent";
+    idempotencyKey?: string | null;
+    fields?: Array<{ label: string; value: string }>;
+  }): Promise<any>;
+  sendDeploymentNotice(options: {
+    app: string;
+    version: string;
+    environment?: string;
+    commit?: string | null;
+    status?: "succeeded" | "failed" | "in_progress";
+    url?: string | null;
+    idempotencyKey?: string | null;
+  }): Promise<any>;
+  sendSecurityAlert(options: {
+    title: string;
+    details: string;
+    severity?: "low" | "medium" | "high" | "critical";
+    ip?: string | null;
+    user?: string | null;
+    idempotencyKey?: string | null;
+  }): Promise<any>;
+}
+
+export declare const serviceMessenger: ServiceMessenger;
 
 export declare const mbkutils: MbkUtils;
 export default mbkutils;

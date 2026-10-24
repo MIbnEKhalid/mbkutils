@@ -110,7 +110,14 @@ export {
   formatDuration,
 } from "./utils/dateTime.js";
 
-// 9. Default aggregated export object
+// 9. Service Messenger & Block Kit Engine
+export {
+  BlockKit,
+  ServiceMessenger,
+  serviceMessenger,
+} from "./utils/serviceMessenger.js";
+
+// 10. Default aggregated export object
 import { isJsonRequest } from "./response/contentNegotiation.js";
 import { getUserContext, sanitizeErrorDetails, sendSuccess, sendError, renderError, renderPage } from "./response/formatters.js";
 import { createErrorHandler, createNotFoundHandler, proxycall } from "./response/handlers.js";
@@ -158,6 +165,7 @@ import {
   isOverdue,
   formatDuration,
 } from "./utils/dateTime.js";
+import { BlockKit, ServiceMessenger, serviceMessenger } from "./utils/serviceMessenger.js";
 
 export const mbkutils = {
   isJsonRequest,
@@ -215,6 +223,9 @@ export const mbkutils = {
   isExpired,
   isOverdue,
   formatDuration,
+  BlockKit,
+  ServiceMessenger,
+  serviceMessenger,
 };
 
 export default mbkutils;

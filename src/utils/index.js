@@ -5,3 +5,4 @@ export * from "./text.js";
 export * from "./json.js";
 export * from "./crypto.js";
 export * from "./dateTime.js";
+export * from "./serviceMessenger.js";

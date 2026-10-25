@@ -113,6 +113,7 @@ export {
 // 9. Service Messenger & Block Kit Engine
 export {
   BlockKit,
+  BLOCK_KIT_STYLES,
   ServiceMessenger,
   serviceMessenger,
 } from "./utils/serviceMessenger.js";

@@ -37,18 +37,34 @@ export const BlockKit = {
     };
   },
   actions(elements) {
+    const validStyles = ["primary", "danger", "warning", "success", "outline", "default", "secondary"];
     return {
       type: "actions",
-      elements: (elements || []).map((btn) => ({
-        type: "button",
-        text: String(btn.text || "Open"),
-        url: btn.url || null,
-        action_id: btn.action_id || btn.actionId || null,
-        style: btn.style || "default", // 'primary' | 'danger' | 'default'
-      })),
+      elements: (elements || []).map((btn) => {
+        const rawStyle = String(btn.style || "default").toLowerCase();
+        const style = validStyles.includes(rawStyle) ? rawStyle : "default";
+        return {
+          type: "button",
+          text: String(btn.text || "Open"),
+          url: btn.url || null,
+          action_id: btn.action_id || btn.actionId || null,
+          style,
+          icon: btn.icon ? String(btn.icon) : null,
+        };
+      }),
     };
   },
 };
+
+export const BLOCK_KIT_STYLES = [
+  "primary",
+  "danger",
+  "warning",
+  "success",
+  "outline",
+  "default",
+  "secondary",
+];
 
 /**
  * ServiceMessenger Class

@@ -116,6 +116,7 @@ export {
   BLOCK_KIT_STYLES,
   ServiceMessenger,
   serviceMessenger,
+  buildServiceDispatchHeaders,
 } from "./utils/serviceMessenger.js";
 
 // 10. Default aggregated export object
@@ -166,7 +167,7 @@ import {
   isOverdue,
   formatDuration,
 } from "./utils/dateTime.js";
-import { BlockKit, ServiceMessenger, serviceMessenger } from "./utils/serviceMessenger.js";
+import { BlockKit, ServiceMessenger, serviceMessenger, buildServiceDispatchHeaders } from "./utils/serviceMessenger.js";
 
 export const mbkutils = {
   isJsonRequest,
@@ -227,6 +228,7 @@ export const mbkutils = {
   BlockKit,
   ServiceMessenger,
   serviceMessenger,
+  buildServiceDispatchHeaders,
 };
 
 export default mbkutils;

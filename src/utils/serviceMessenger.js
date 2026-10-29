@@ -1,12 +1,26 @@
 // FILE PATH: src/utils/serviceMessenger.js
 // Authoritative Universal Service Messenger & Block Kit Client for MBK Ecosystem
 
+import crypto from "node:crypto";
+
+const VALID_BUTTON_STYLES = [
+  "primary",
+  "danger",
+  "warning",
+  "success",
+  "outline",
+  "default",
+  "secondary",
+];
+
 /**
  * Block Kit Helper Functions
  */
 export const BlockKit = {
-  header(text) {
-    return { type: "header", text: String(text || "") };
+  header(text, priority = null) {
+    const block = { type: "header", text: String(text || "") };
+    if (priority) block.priority = String(priority);
+    return block;
   },
   section(text, fields = null) {
     const block = { type: "section", text: String(text || "") };
@@ -36,13 +50,12 @@ export const BlockKit = {
       }),
     };
   },
-  actions(elements) {
-    const validStyles = ["primary", "danger", "warning", "success", "outline", "default", "secondary"];
+  actions(buttonsArray) {
     return {
       type: "actions",
-      elements: (elements || []).map((btn) => {
+      elements: (buttonsArray || []).map((btn) => {
         const rawStyle = String(btn.style || "default").toLowerCase();
-        const style = validStyles.includes(rawStyle) ? rawStyle : "default";
+        const style = VALID_BUTTON_STYLES.includes(rawStyle) ? rawStyle : "default";
         return {
           type: "button",
           text: String(btn.text || "Open"),
@@ -56,39 +69,87 @@ export const BlockKit = {
   },
 };
 
-export const BLOCK_KIT_STYLES = [
-  "primary",
-  "danger",
-  "warning",
-  "success",
-  "outline",
-  "default",
-  "secondary",
-];
+export const BLOCK_KIT_STYLES = [...VALID_BUTTON_STYLES];
+
+function env(name) {
+  return typeof process !== "undefined" ? process.env?.[name] : undefined;
+}
 
 /**
- * ServiceMessenger Class
+ * Build dispatch headers (Bearer token or HMAC-SHA256 over `<timestamp>.<rawBody>`).
+ */
+export function buildServiceDispatchHeaders({
+  secret,
+  serviceId,
+  rawBody,
+  idempotencyKey = null,
+} = {}) {
+  const headers = { "Content-Type": "application/json" };
+  const token = secret ? String(secret) : "";
+
+  if (idempotencyKey) {
+    headers["X-Idempotency-Key"] = String(idempotencyKey);
+  }
+
+  if (!token) return headers;
+
+  if (token.startsWith("mbk_svc_") || token.startsWith("mbk_pat_")) {
+    headers.Authorization = `Bearer ${token}`;
+    if (serviceId) headers["X-MBK-Service-ID"] = String(serviceId);
+    return headers;
+  }
+
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = crypto
+    .createHmac("sha256", token)
+    .update(`${timestamp}.${rawBody || ""}`)
+    .digest("hex");
+
+  headers["X-MBK-Service-ID"] = String(serviceId || env("MBK_SERVICE_ID") || "mbkutils");
+  headers["X-MBK-Timestamp"] = timestamp;
+  headers["X-MBK-Signature"] = signature;
+  return headers;
+}
+
+/**
+ * ServiceMessenger Class — official M2M Block Kit client SDK
  */
 export class ServiceMessenger {
   constructor(options = {}) {
     this.baseUrl = (
       options.baseUrl ||
-      (typeof process !== "undefined" && process.env?.MBKCORE_URL) ||
+      env("MBKCORE_URL") ||
+      env("MBK_CORE_URL") ||
       "http://localhost:5001"
     ).replace(/\/+$/, "");
 
-    this.token =
+    this.secret =
+      options.secret ||
       options.apiKey ||
       options.token ||
-      (typeof process !== "undefined" && (process.env?.MBK_SERVICE_TOKEN || process.env?.MBK_API_KEY)) ||
+      env("MBK_SERVICE_SECRET") ||
+      env("MBK_SERVICE_TOKEN") ||
+      env("MBK_API_KEY") ||
       null;
 
+    this.serviceId = options.serviceId || env("MBK_SERVICE_ID") || "mbkutils";
+    this.token = this.secret;
     this.defaultChannel = options.defaultChannel || "system_status";
     this.timeout = options.timeout || 10000;
   }
 
   setToken(token) {
+    this.secret = token;
     this.token = token;
+    return this;
+  }
+
+  setSecret(secret) {
+    return this.setToken(secret);
+  }
+
+  setServiceId(serviceId) {
+    this.serviceId = serviceId;
     return this;
   }
 
@@ -97,9 +158,6 @@ export class ServiceMessenger {
     return this;
   }
 
-  /**
-   * Dispatches a raw service card or Block Kit message to a channel
-   */
   async dispatch({
     channel = null,
     channelKey = null,
@@ -107,34 +165,34 @@ export class ServiceMessenger {
     content = "",
     blocks = null,
     priority = "normal",
+    conditions = null,
     idempotencyKey = null,
     senderName = null,
     mediaUrl = null,
     mediaMeta = null,
-  }) {
+  } = {}) {
     const targetChannel = (channelKey || channel || this.defaultChannel).toLowerCase();
     const endpoint = `${this.baseUrl}/api/chat/channels/${targetChannel}/dispatch`;
-
-    const headers = {
-      "Content-Type": "application/json",
-    };
-    if (this.token) {
-      headers["Authorization"] = `Bearer ${this.token}`;
-    }
-    if (idempotencyKey) {
-      headers["X-Idempotency-Key"] = String(idempotencyKey);
-    }
 
     const payload = {
       title,
       content,
       blocks,
       priority,
+      conditions: conditions || undefined,
       idempotencyKey,
       senderName,
       mediaUrl,
       mediaMeta,
     };
+    const rawBody = JSON.stringify(payload);
+
+    const headers = buildServiceDispatchHeaders({
+      secret: this.secret,
+      serviceId: this.serviceId,
+      rawBody,
+      idempotencyKey,
+    });
 
     const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), this.timeout) : null;
@@ -143,7 +201,7 @@ export class ServiceMessenger {
       const response = await fetch(endpoint, {
         method: "POST",
         headers,
-        body: JSON.stringify(payload),
+        body: rawBody,
         signal: controller ? controller.signal : undefined,
       });
 
@@ -161,44 +219,44 @@ export class ServiceMessenger {
     }
   }
 
-  /**
-   * Send a Block Kit Card
-   */
   async sendCard({
     channel,
+    channelKey,
     title,
     content,
     blocks = [],
     priority = "normal",
+    conditions = null,
     idempotencyKey = null,
     senderName = null,
-  }) {
+  } = {}) {
     return this.dispatch({
       channel,
+      channelKey,
       title,
       content,
       blocks,
       priority,
+      conditions,
       idempotencyKey,
       senderName,
     });
   }
 
-  /**
-   * Send a simple formatted Alert
-   */
   async sendAlert({
     channel = "system_status",
+    channelKey = null,
     title,
     message,
-    type = "info", // 'info' | 'warning' | 'error' | 'success'
+    type = "info",
     priority = "normal",
-    idempotencyKey = null,
     fields = [],
-  }) {
+    conditions = null,
+    idempotencyKey = null,
+  } = {}) {
     const icon = type === "error" ? "🚨" : type === "warning" ? "⚠️" : type === "success" ? "✅" : "ℹ️";
     const blocks = [
-      BlockKit.header(`${icon} ${title || "System Notice"}`),
+      BlockKit.header(`${icon} ${title || "System Notice"}`, priority),
       BlockKit.section(message),
     ];
 
@@ -208,26 +266,26 @@ export class ServiceMessenger {
 
     return this.dispatch({
       channel,
+      channelKey,
       title,
       content: message,
       blocks,
       priority: type === "error" ? "urgent" : type === "warning" ? "high" : priority,
+      conditions,
       idempotencyKey,
     });
   }
 
-  /**
-   * Send a structured Deployment Notice
-   */
   async sendDeploymentNotice({
     app,
     version,
     environment = "production",
     commit = null,
-    status = "succeeded", // 'succeeded' | 'failed' | 'in_progress'
+    status = "succeeded",
     url = null,
+    conditions = null,
     idempotencyKey = null,
-  }) {
+  } = {}) {
     const icon = status === "succeeded" ? "🚀" : status === "failed" ? "❌" : "⏳";
     const headerTitle = `${icon} Deployment ${status.toUpperCase()}: ${app} v${version}`;
 
@@ -241,16 +299,13 @@ export class ServiceMessenger {
       fields.push({ label: "Commit", value: String(commit).substring(0, 7) });
     }
 
-    const blocks = [
-      BlockKit.header(headerTitle),
-      BlockKit.fields(fields),
-    ];
+    const blocks = [BlockKit.header(headerTitle), BlockKit.fields(fields)];
 
     if (url) {
       blocks.push(
         BlockKit.actions([
           { text: "View Deployment", url, style: status === "succeeded" ? "primary" : "default" },
-        ])
+        ]),
       );
     }
 
@@ -260,32 +315,29 @@ export class ServiceMessenger {
       content: `Deployment of ${app} v${version} to ${environment} ${status}.`,
       blocks,
       priority: status === "failed" ? "high" : "normal",
+      conditions,
       idempotencyKey,
     });
   }
 
-  /**
-   * Send a Security Alert
-   */
   async sendSecurityAlert({
     title,
     details,
-    severity = "high", // 'low' | 'medium' | 'high' | 'critical'
+    severity = "high",
     ip = null,
     user = null,
+    conditions = null,
     idempotencyKey = null,
-  }) {
+  } = {}) {
     const icon = severity === "critical" || severity === "high" ? "🛑" : "⚠️";
     const headerTitle = `${icon} Security Alert: ${title}`;
 
-    const fields = [
-      { label: "Severity", value: severity.toUpperCase() },
-    ];
+    const fields = [{ label: "Severity", value: severity.toUpperCase() }];
     if (user) fields.push({ label: "User", value: String(user) });
     if (ip) fields.push({ label: "Origin IP", value: String(ip) });
 
     const blocks = [
-      BlockKit.header(headerTitle),
+      BlockKit.header(headerTitle, severity === "critical" ? "urgent" : "high"),
       BlockKit.section(details),
       BlockKit.fields(fields),
     ];
@@ -296,6 +348,7 @@ export class ServiceMessenger {
       content: details,
       blocks,
       priority: severity === "critical" ? "urgent" : "high",
+      conditions,
       idempotencyKey,
     });
   }

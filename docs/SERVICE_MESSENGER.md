@@ -28,7 +28,7 @@
               ▼  (HTTP POST / JSON)
      [ mbkutils: ServiceMessenger ]
               │
-              ▼  (Bearer Token Auth)
+              ▼  (HMAC-SHA256 or Bearer mbk_svc_ / PAT)
   [ mbkcore Gateway: /api/chat/channels/:key/dispatch ]
               │
       ┌───────┴────────────────────────┐
@@ -51,7 +51,17 @@
 | Environment Variable | Description | Default |
 |:---|:---|:---|
 | `MBKCORE_URL` or `MBK_CORE_URL` | Base URL of the `mbkcore` server | `http://localhost:5001` (production: `https://core.mbktech.org`) |
-| `MBK_SERVICE_TOKEN` or `MBK_API_KEY` | Bearer token with `chat_admin.dispatch` permission | `null` |
+| `MBK_SERVICE_ID` | Caller identity header (`X-MBK-Service-ID`) | `mbkutils` |
+| `MBK_SERVICE_SECRET` | Shared HMAC secret **or** `mbk_svc_` / `mbk_pat_` bearer token | `null` |
+| `MBK_SERVICE_TOKEN` or `MBK_API_KEY` | Alternate bearer token (`mbk_svc_…` or `mbk_pat_…`) | `null` |
+
+### Authentication modes
+- **Bearer service token:** if `secret` starts with `mbk_svc_` (or a PAT `mbk_pat_`), the client sends `Authorization: Bearer <secret>`.
+- **HMAC-SHA256:** for any other secret, the client signs `<timestamp>.<rawBody>` and sends:
+  - `X-MBK-Service-ID`
+  - `X-MBK-Timestamp` (unix epoch seconds)
+  - `X-MBK-Signature` (hex digest)
+- Optional `X-Idempotency-Key` is forwarded on every dispatch.
 
 ### Constructor Options
 ```javascript
@@ -59,7 +69,8 @@ import { ServiceMessenger } from "mbkutils";
 
 const messenger = new ServiceMessenger({
   baseUrl: process.env.MBKCORE_URL || "https://core.mbktech.org",
-  apiKey: process.env.MBK_SERVICE_TOKEN,
+  secret: process.env.MBK_SERVICE_SECRET,
+  serviceId: process.env.MBK_SERVICE_ID || "srv_deploy_station",
   defaultChannel: "system_status",
   timeout: 10000, // Request timeout in ms (default: 10000)
 });
@@ -235,7 +246,27 @@ await serviceMessenger.sendDeploymentNotice({
 });
 ```
 
-### 4. Security Alert (`messenger.sendSecurityAlert`)
+### 4. Task assignment notice
+```javascript
+await serviceMessenger.sendCard({
+  channelKey: "support_tickets",
+  title: "Task assigned",
+  content: "You were assigned a new work item.",
+  priority: "high",
+  conditions: { users: ["u_assignee"] },
+  blocks: [
+    BlockKit.header("Task assigned"),
+    BlockKit.section("Please review and start work."),
+    BlockKit.fields([
+      { label: "Task", value: "DNS cutover" },
+      { label: "Due", value: "2026-11-02" },
+    ]),
+    BlockKit.actions([{ text: "Open task", url: "https://portal.mbktech.org/tasks/42", style: "primary" }]),
+  ],
+});
+```
+
+### 5. Security Alert (`messenger.sendSecurityAlert`)
 ```javascript
 await serviceMessenger.sendSecurityAlert({
   title: "Anomalous Login Blocked",
@@ -251,29 +282,41 @@ await serviceMessenger.sendSecurityAlert({
 
 ## 6. Audience Targeting & Exclusions
 
-Each channel defines a default audience, but individual dispatches can override or refine targeting:
+Each channel defines a default audience. Individual dispatches can **narrow** that audience with a `conditions` object on `dispatch()`, `sendCard()`, `sendAlert()`, `sendDeploymentNotice()`, and `sendSecurityAlert()`.
 
-### Targeting Structure
+### Dynamic `conditions` payload
+```javascript
+await serviceMessenger.sendAlert({
+  channel: "security_alerts",
+  title: "Anomalous Login Blocked",
+  message: "Multiple invalid API token signatures detected.",
+  type: "error",
+  conditions: {
+    roles: ["admin", "director"],
+    users: ["u_chairman"],
+    designations: ["CEO", "CTO"],
+    excludeUsers: ["u_suspended_user"],
+  },
+});
+```
+
 ```json
 {
-  "audience": {
-    "all": false,
-    "roles": ["superadmin", "director", "legal"],
-    "designations": ["Board", "Executive"],
-    "userIds": ["u_chairman", "u_ceo"]
-  },
-  "exclusions": {
-    "roles": ["guest"],
-    "userIds": ["u_suspended_user"]
+  "conditions": {
+    "roles": ["admin", "director"],
+    "users": ["u_chairman", "u_ceo"],
+    "designations": ["CEO", "CTO"],
+    "excludeUsers": ["u_suspended_user"]
   }
 }
 ```
 
-- **`all: true`**: Broadcasts to every active member with chat permissions.
-- **`roles`**: Delivers only to users holding the specified system roles (`superadmin`, `admin`, `member`, `director`).
-- **`designations`**: Evaluates corporate badge titles (`Board`, `Executive`, `CEO`, `CTO`).
-- **`userIds`**: Direct delivery to explicit user identifiers.
-- **`exclusions`**: Explicit blacklist preventing specific users or roles from receiving the alert or push notification.
+- Channel audience is the base set (`all`, `roles`, `users`, `designations`, plus channel `exclusions`).
+- Positive `conditions` (`roles`, `users`, `designations`) further filter that set.
+- `excludeUsers` is always subtracted.
+
+### Priority levels
+`low` · `normal` · `high` · `urgent` (critical cards should use `urgent`).
 
 ---
 

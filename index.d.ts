@@ -300,6 +300,7 @@ export interface MbkUtils {
   BlockKit: typeof BlockKit;
   ServiceMessenger: typeof ServiceMessenger;
   serviceMessenger: ServiceMessenger;
+  buildServiceDispatchHeaders: typeof buildServiceDispatchHeaders;
 }
 
 export interface BlockKitBlock {
@@ -309,30 +310,52 @@ export interface BlockKitBlock {
   elements?: any[];
 }
 
+export type BlockKitButtonStyle = "primary" | "danger" | "warning" | "success" | "outline" | "default" | "secondary";
+
+export interface DispatchConditions {
+  roles?: string[];
+  users?: string[];
+  designations?: string[];
+  excludeUsers?: string[];
+}
+
 export declare const BlockKit: {
-  header(text: string): BlockKitBlock;
+  header(text: string, priority?: string | null): BlockKitBlock;
   section(text: string, fields?: Array<{ label: string; value: string }>): BlockKitBlock;
   fields(fieldsArray: Array<{ label: string; value: string }>): BlockKitBlock;
   divider(): BlockKitBlock;
   context(elements: Array<string | { type: string; text: string }>): BlockKitBlock;
-  actions(elements: Array<{ text: string; url?: string | null; action_id?: string | null; style?: "primary" | "danger" | "default" }>): BlockKitBlock;
+  actions(elements: Array<{ text: string; url?: string | null; action_id?: string | null; actionId?: string | null; style?: BlockKitButtonStyle; icon?: string | null }>): BlockKitBlock;
 };
 
 export interface ServiceMessengerOptions {
   baseUrl?: string;
   apiKey?: string;
   token?: string;
+  secret?: string;
+  serviceId?: string;
   defaultChannel?: string;
   timeout?: number;
 }
 
+export declare function buildServiceDispatchHeaders(options: {
+  secret?: string | null;
+  serviceId?: string | null;
+  rawBody?: string;
+  idempotencyKey?: string | null;
+}): Record<string, string>;
+
 export declare class ServiceMessenger {
   baseUrl: string;
   token: string | null;
+  secret: string | null;
+  serviceId: string;
   defaultChannel: string;
   timeout: number;
   constructor(options?: ServiceMessengerOptions);
   setToken(token: string): this;
+  setSecret(secret: string): this;
+  setServiceId(serviceId: string): this;
   setBaseUrl(url: string): this;
   dispatch(options: {
     channel?: string | null;
@@ -341,6 +364,7 @@ export declare class ServiceMessenger {
     content?: string;
     blocks?: BlockKitBlock[] | null;
     priority?: "low" | "normal" | "high" | "urgent";
+    conditions?: DispatchConditions | null;
     idempotencyKey?: string | null;
     senderName?: string | null;
     mediaUrl?: string | null;
@@ -348,21 +372,25 @@ export declare class ServiceMessenger {
   }): Promise<any>;
   sendCard(options: {
     channel?: string;
+    channelKey?: string;
     title?: string;
     content?: string;
     blocks?: BlockKitBlock[];
     priority?: "low" | "normal" | "high" | "urgent";
+    conditions?: DispatchConditions | null;
     idempotencyKey?: string | null;
     senderName?: string | null;
   }): Promise<any>;
   sendAlert(options: {
     channel?: string;
+    channelKey?: string;
     title?: string;
     message: string;
     type?: "info" | "warning" | "error" | "success";
     priority?: "low" | "normal" | "high" | "urgent";
-    idempotencyKey?: string | null;
     fields?: Array<{ label: string; value: string }>;
+    conditions?: DispatchConditions | null;
+    idempotencyKey?: string | null;
   }): Promise<any>;
   sendDeploymentNotice(options: {
     app: string;
@@ -371,6 +399,7 @@ export declare class ServiceMessenger {
     commit?: string | null;
     status?: "succeeded" | "failed" | "in_progress";
     url?: string | null;
+    conditions?: DispatchConditions | null;
     idempotencyKey?: string | null;
   }): Promise<any>;
   sendSecurityAlert(options: {
@@ -379,6 +408,7 @@ export declare class ServiceMessenger {
     severity?: "low" | "medium" | "high" | "critical";
     ip?: string | null;
     user?: string | null;
+    conditions?: DispatchConditions | null;
     idempotencyKey?: string | null;
   }): Promise<any>;
 }

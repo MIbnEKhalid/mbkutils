@@ -25,7 +25,10 @@ export const BlockKit = {
   section(text, fields = null) {
     const block = { type: "section", text: String(text || "") };
     if (Array.isArray(fields) && fields.length > 0) {
-      block.fields = fields;
+      block.fields = fields.map((f) => ({
+        label: String(f?.label || ""),
+        value: String(f?.value || ""),
+      }));
     }
     return block;
   },
@@ -33,8 +36,8 @@ export const BlockKit = {
     return {
       type: "fields",
       fields: (fieldsArray || []).map((f) => ({
-        label: String(f.label || ""),
-        value: String(f.value || ""),
+        label: String(f?.label || ""),
+        value: String(f?.value || ""),
       })),
     };
   },
@@ -54,15 +57,17 @@ export const BlockKit = {
     return {
       type: "actions",
       elements: (buttonsArray || []).map((btn) => {
-        const rawStyle = String(btn.style || "default").toLowerCase();
+        const rawStyle = String(btn?.style || "default").toLowerCase();
         const style = VALID_BUTTON_STYLES.includes(rawStyle) ? rawStyle : "default";
+        const actionId = btn?.action_id || btn?.actionId;
+        const text = String(btn?.text || "Open").trim();
         return {
           type: "button",
-          text: String(btn.text || "Open"),
-          url: btn.url || null,
-          action_id: btn.action_id || btn.actionId || null,
+          text: text || "Open",
+          url: btn?.url ? String(btn.url) : null,
+          action_id: actionId ? String(actionId).trim() : null,
           style,
-          icon: btn.icon ? String(btn.icon) : null,
+          icon: btn?.icon ? String(btn.icon) : null,
         };
       }),
     };
@@ -158,6 +163,37 @@ export class ServiceMessenger {
     return this;
   }
 
+  /**
+   * Fluent condition targeting — chain before dispatch().
+   * Each method merges into a pending conditions object that is
+   * automatically applied on the next dispatch() call and then reset.
+   */
+  toRoles(rolesArray) {
+    this._pendingConditions = { ...(this._pendingConditions || {}), roles: rolesArray };
+    return this;
+  }
+
+  toUsers(usersArray) {
+    this._pendingConditions = { ...(this._pendingConditions || {}), users: usersArray };
+    return this;
+  }
+
+  toDesignations(designationsArray) {
+    this._pendingConditions = {
+      ...(this._pendingConditions || {}),
+      designations: designationsArray,
+    };
+    return this;
+  }
+
+  excludingUsers(excludeArray) {
+    this._pendingConditions = {
+      ...(this._pendingConditions || {}),
+      excludeUsers: excludeArray,
+    };
+    return this;
+  }
+
   async dispatch({
     channel = null,
     channelKey = null,
@@ -174,12 +210,19 @@ export class ServiceMessenger {
     const targetChannel = (channelKey || channel || this.defaultChannel).toLowerCase();
     const endpoint = `${this.baseUrl}/api/chat/channels/${targetChannel}/dispatch`;
 
+    // Merge fluent-chained conditions with any inline conditions passed to dispatch
+    const mergedConditions =
+      this._pendingConditions || conditions
+        ? { ...(this._pendingConditions || {}), ...(conditions || {}) }
+        : undefined;
+    this._pendingConditions = null;
+
     const payload = {
       title,
       content,
       blocks,
       priority,
-      conditions: conditions || undefined,
+      conditions: mergedConditions || undefined,
       idempotencyKey,
       senderName,
       mediaUrl,

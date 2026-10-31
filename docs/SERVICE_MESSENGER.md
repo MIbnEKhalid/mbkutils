@@ -2,412 +2,416 @@
 
 > **Package:** `mbkutils`  
 > **Module:** `import { ServiceMessenger, BlockKit, serviceMessenger } from "mbkutils";`  
-> **Target:** Microservices, automated agents, CI/CD runners, internal tools, and external services dispatching real-time notifications, interactive cards, and alerts to **Beyvion Messenger (`mbkchat`)** via **MBK Core (`mbkcore`)**.
+> **Version:** `1.2.2`  
+> **Author & Developer:** **Maaz Waheed** ([GitHub: @42Wor](https://github.com/42Wor)) [1]  
+> **Target:** Microservices, automated agents, background daemons, CI/CD pipelines, and internal/external systems dispatching real-time notifications, interactive Block Kit cards, and prioritized alerts to **Beyvion Messenger (`mbkchat`)** via **MBK Core (`mbkcore`)**.
 
 ---
 
 ## Table of Contents
-1. [Overview](#1-overview)
-2. [Configuration & Initialization](#2-configuration--initialization)
-3. [Default Service Channels](#3-default-service-channels)
-4. [Block Kit Component Builders (`BlockKit.*`)](#4-block-kit-component-builders-blockkit)
-5. [Convenience Dispatch Methods](#5-convenience-dispatch-methods)
-6. [Audience Targeting & Exclusions](#6-audience-targeting--exclusions)
-7. [Idempotency & Card In-Place Updates](#7-idempotency--card-in-place-updates)
-8. [Multi-Language HTTP Contract (Python, Go, Rust, PHP, cURL)](#8-multi-language-http-contract)
+1. [Architecture Overview](#1-architecture-overview)
+2. [Installation & Setup](#2-installation--setup)
+3. [Environment Configuration](#3-environment-configuration)
+4. [Authentication Modes (Bearer vs. HMAC-SHA256)](#4-authentication-modes-bearer-vs-hmac-sha256)
+5. [Default Service Channels & RBAC](#5-default-service-channels--rbac)
+6. [Block Kit Component Specification (`BlockKit.*`)](#6-block-kit-component-specification-blockkit)
+7. [Fluent Conditions & Dynamic Audience Targeting](#7-fluent-conditions--dynamic-audience-targeting)
+8. [High-Level Dispatch Methods](#8-high-level-dispatch-methods)
+9. [Idempotency & In-Place Card Mutation](#9-idempotency--in-place-card-mutation)
+10. [Multi-Language HTTP Wire Specification](#10-multi-language-http-wire-specification)
+    - [Python](#101-python)
+    - [Go (Golang)](#102-go-golang)
+    - [Rust](#103-rust)
+    - [cURL](#104-curl)
+11. [Complete End-to-End Node.js Implementation Example](#11-complete-end-to-end-nodejs-implementation-example)
 
 ---
 
-## 1. Overview
+## 1. Architecture Overview
 
-`ServiceMessenger` provides a typed, standardized client for dispatching rich interactive cards and system notices directly into Beyvion Messenger service channels (`svc_*`). Rather than sending unformatted text or disparate push notifications, messages are rendered using **MBK Block Kit**: structured visual blocks including bold headers, two-column attribute grids, divider lines, context footers, and interactive action buttons.
+`ServiceMessenger` is an enterprise M2M (Machine-to-Machine) communication client built into `mbkutils`. It transforms automated backend events, metrics, and alerts into **standardized, interactive visual cards** directly inside corporate chat feeds.
 
 ```
-[ Your Service / Agent / CI/CD ]
-              │
-              ▼  (HTTP POST / JSON)
-     [ mbkutils: ServiceMessenger ]
-              │
-              ▼  (HMAC-SHA256 or Bearer mbk_svc_ / PAT)
-  [ mbkcore Gateway: /api/chat/channels/:key/dispatch ]
-              │
-      ┌───────┴────────────────────────┐
-      ▼                                ▼
-[ PostgreSQL Compliance ]    [ Cloud Firestore & FCM ]
-                                       │
-                                       ▼
-                       [ Beyvion Messenger (mbkchat) ]
-                         • Android • Windows
-                         • Linux   • Web SPA
+┌────────────────────────────────────────────────────────────────────────┐
+│                      ORIGINATING SIBLING SYSTEM                        │
+│     (CI/CD Runner, Cron Daemon, Microservice, Cloud Monitoring)        │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼  (mbkutils)
+           [ BlockKit Builder ] ──▶ [ ServiceMessenger.dispatch() ]
+                                    │
+                                    │  Signed HTTP POST
+                                    │  Headers: X-MBK-Signature / Bearer mbk_svc_*
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                        MBK CORE (mbkcore) GATEWAY                      │
+│                                                                        │
+│   1. service-auth.middleware.js (Validates token/HMAC via mbkauthe)    │
+│   2. Scope Enforcer (Verifies machine permissions for target channel)  │
+│   3. Dynamic Audience Resolver (Applies role/user/exclusion filters)   │
+└───────────────────┬────────────────────────────────┬───────────────────┘
+                    │                                │
+                    ▼                                ▼
+       ┌────────────────────────┐      ┌───────────────────────────────┐
+       │ PostgreSQL (Neon)      │      │ Cloud Firestore & FCM Network │
+       │ mbkcore_chat_messages  │      │ Live reactive stream sockets  │
+       │ Compliance audit log   │      │ + High-priority mobile pushes │
+       └────────────────────────┘      └───────────────┬───────────────┘
+                                                       │
+                                                       ▼
+                                       ┌───────────────────────────────┐
+                                       │   Beyvion Messenger (mbkchat) │
+                                       │   Android • Windows • Web SPA │
+                                       └───────────────────────────────┘
 ```
 
 ---
 
-## 2. Configuration & Initialization
+## 2. Installation & Setup
 
-### Environment Variables
-`ServiceMessenger` automatically picks up standard environment variables if not passed explicitly:
+Ensure `mbkutils` is installed in your project:
 
-| Environment Variable | Description | Default |
-|:---|:---|:---|
-| `MBKCORE_URL` or `MBK_CORE_URL` | Base URL of the `mbkcore` server | `http://localhost:5001` (production: `https://core.mbktech.org`) |
-| `MBK_SERVICE_ID` | Caller identity header (`X-MBK-Service-ID`) | `mbkutils` |
-| `MBK_SERVICE_SECRET` | Shared HMAC secret **or** `mbk_svc_` / `mbk_pat_` bearer token | `null` |
-| `MBK_SERVICE_TOKEN` or `MBK_API_KEY` | Alternate bearer token (`mbk_svc_…` or `mbk_pat_…`) | `null` |
+```bash
+npm install mbkutils
+```
 
-### Authentication modes
-- **Bearer service token:** if `secret` starts with `mbk_svc_` (or a PAT `mbk_pat_`), the client sends `Authorization: Bearer <secret>`.
-- **HMAC-SHA256:** for any other secret, the client signs `<timestamp>.<rawBody>` and sends:
-  - `X-MBK-Service-ID`
-  - `X-MBK-Timestamp` (unix epoch seconds)
-  - `X-MBK-Signature` (hex digest)
-- Optional `X-Idempotency-Key` is forwarded on every dispatch.
+Import `ServiceMessenger`, `BlockKit`, or the pre-instantiated singleton `serviceMessenger`:
 
-### Constructor Options
+```javascript
+import { ServiceMessenger, BlockKit, serviceMessenger } from "mbkutils";
+```
+
+---
+
+## 3. Environment Configuration
+
+`ServiceMessenger` automatically reads configuration from environment variables if not passed directly via constructor parameters:
+
+| Environment Variable | Description | Default Value | Example |
+| :--- | :--- | :--- | :--- |
+| `MBKCORE_URL` / `MBK_CORE_URL` | Base URL of the `mbkcore` server | `http://localhost:5001` | `https://core.mbktech.org` |
+| `MBK_SERVICE_ID` | Unique identity slug of the calling machine | `mbkutils` | `srv_payment_processor` |
+| `MBK_SERVICE_SECRET` | Shared HMAC secret **or** `mbk_svc_*` bearer token | `null` | `mbk_svc_4f92...` |
+| `MBK_SERVICE_TOKEN` / `MBK_API_KEY` | Explicit Bearer token string | `null` | `mbk_svc_98ab...` |
+
+### Manual Initialization
 ```javascript
 import { ServiceMessenger } from "mbkutils";
 
 const messenger = new ServiceMessenger({
   baseUrl: process.env.MBKCORE_URL || "https://core.mbktech.org",
+  serviceId: "srv_payment_processor",
   secret: process.env.MBK_SERVICE_SECRET,
-  serviceId: process.env.MBK_SERVICE_ID || "srv_deploy_station",
   defaultChannel: "system_status",
-  timeout: 10000, // Request timeout in ms (default: 10000)
-});
-```
-
-### Pre-Configured Singleton
-For standard usage with environment variables:
-```javascript
-import { serviceMessenger } from "mbkutils";
-
-// Uses process.env.MBKCORE_URL and process.env.MBK_SERVICE_TOKEN
-await serviceMessenger.sendAlert({
-  title: "Service Booted",
-  message: "Worker service instance online.",
-  type: "info",
+  timeout: 10000, // 10-second request timeout
 });
 ```
 
 ---
 
-## 3. Default Service Channels
+## 4. Authentication Modes (Bearer vs. HMAC-SHA256)
 
-MBK Core seeds six core service channels on startup. Each channel has a designated category, icon, accent color, and default audience:
+`ServiceMessenger` supports two distinct cryptographic authorization models, both natively evaluated by `mbkcore` via `mbkauthe`:
 
-| Channel Key | Channel Display Name | Category | Default Audience | Allow Mute |
-|:---|:---|:---|:---|:---:|
-| `system_status` | System Status & Alerts | `system` | All Active Users | ❌ No |
-| `governance_alerts` | Board & Governance | `governance` | Directors, Executives, Superadmins | ✅ Yes |
-| `security_alerts` | Security & Access | `security` | Admins & Superadmins | ❌ No |
-| `build_deploys` | Build & Deployments | `devops` | Admins & Superadmins | ✅ Yes |
-| `support_tickets` | Support & Inquiries | `operations` | Support Staff & Admins | ✅ Yes |
-| `announcements` | Company Announcements | `company` | All Active Users | ✅ Yes |
+### Mode A: Bearer Service Token (`mbk_svc_*`)
+Recommended for internal services and microservices running in secure networks:
+* When the configured secret begins with `mbk_svc_` or `mbk_pat_`, standard Bearer authorization is sent:
+  ```http
+  Authorization: Bearer mbk_svc_7a8f3b20...
+  X-MBK-Service-ID: srv_payment_processor
+  ```
 
-### Registering Custom Service Channels (e.g., `mbk-api`)
-Services can register unique custom channels directly via the `mbkcore` REST API:
-```http
-POST /api/chat/channels
-Authorization: Bearer <ADMIN_TOKEN>
-Content-Type: application/json
-
-{
-  "channelKey": "mbk_api",
-  "displayName": "MBK API Engine",
-  "description": "High-throughput inference, token quotas, and rate limit telemetry",
-  "category": "api",
-  "icon": "api",
-  "accentColor": "#0284C7",
-  "audience": { "roles": ["admin", "superadmin", "developer"] },
-  "allowMute": true
-}
-```
+### Mode B: HMAC-SHA256 Cryptographic Signature
+Recommended for external webhooks, edge nodes, or environments subject to replay attack risks:
+* For shared symmetric secrets, `ServiceMessenger` signs the serialized body alongside a Unix epoch timestamp:
+  $$\text{Signature} = \text{HMAC-SHA256}(\text{Secret}, \text{Timestamp} + "." + \text{RawBody})$$
+* Transmitted headers:
+  ```http
+  X-MBK-Service-ID: srv_payment_processor
+  X-MBK-Timestamp: 1730365200
+  X-MBK-Signature: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  ```
+* **Replay Protection:** `mbkcore` automatically rejects any request where $|\text{CurrentTime} - \text{Timestamp}| > 300\text{ seconds}$ (5-minute window).
 
 ---
 
-## 4. Block Kit Component Builders (`BlockKit.*`)
+## 5. Default Service Channels & RBAC
 
-The `BlockKit` helper provides composable functions to assemble clean JSON card payloads:
+Channels segment alerts by operational domain. Each channel maintains an explicit audience rule enforced by `mbkcore`:
 
-### 1. `BlockKit.header(text)`
-Displays a bold card title at the top of the message bubble.
+| Channel Key | Category | Default Access Tier | Description |
+| :--- | :--- | :--- | :--- |
+| `system_status` | `system` | **All Active Users** | Infrastructure health, database migrations, platform status. |
+| `build_deploys` | `devops` | **Superadmin, Admin** | CI/CD build pipelines, releases, server deployments. |
+| `security_alerts` | `security` | **Superadmin, Admin** | Anomalous logins, passkey events, security violations. |
+| `governance_alerts` | `governance` | **Executive, Director, Legal** | Board resolutions, statutory ballots, corporate meetings. |
+| `support_tickets` | `operations` | **Support Staff, Admin** | Customer helpdesk escalations and ticket submissions. |
+| `announcements` | `company` | **All Active Users** | Official company-wide broadcasts and leadership updates. |
+
+---
+
+## 6. Block Kit Component Specification (`BlockKit.*`)
+
+The `BlockKit` helper provides composable factory functions to construct structured visual cards.
+
+### 6.1 `BlockKit.header(text, priority = null)`
+Renders a bold, prominent card title at the top of the message bubble.
 ```javascript
-BlockKit.header("🚀 Production Deployment Successful")
-// Output: { type: "header", text: "🚀 Production Deployment Successful" }
+BlockKit.header("🚀 High-Traffic Scale Event Triggered", "high")
+// => { type: "header", text: "🚀 High-Traffic Scale Event Triggered", priority: "high" }
 ```
 
-### 2. `BlockKit.section(text, fields = null)`
-Standard markdown paragraph body. Optionally accepts an array of embedded key-value fields.
+### 6.2 `BlockKit.section(text, fields = null)`
+Renders standard descriptive Markdown text.
 ```javascript
-BlockKit.section("Version 3.17.0 has cleared continuous integration and promoted to production.")
-// Output: { type: "section", text: "Version 3.17.0 has cleared..." }
+BlockKit.section("Autoscaling policy expanded worker group to accommodate elevated load.")
+// => { type: "section", text: "Autoscaling policy expanded worker group to accommodate elevated load." }
 ```
 
-### 3. `BlockKit.fields(fieldsArray)`
-Renders a structured 2-column key-value grid for metadata, metrics, or attributes.
+### 6.3 `BlockKit.fields(fieldsArray)`
+Renders a structured 2-column key-value attribute grid. Values and labels are string-coerced automatically.
 ```javascript
 BlockKit.fields([
   { label: "Environment", value: "Production (US-East)" },
-  { label: "Commit SHA", value: "0713b0f" },
-  { label: "Test Suite", value: "249 / 249 Passed" },
-  { label: "Duration", value: "81.9s" }
+  { label: "CPU Utilization", value: "88.4%" },
+  { label: "Active Nodes", value: "16 (was 8)" },
+  { label: "Throughput", value: "14,200 req/sec" }
 ])
+// => { type: "fields", fields: [{ label: "Environment", value: "Production (US-East)" }, ...] }
 ```
 
-### 4. `BlockKit.divider()`
-Draws a subtle horizontal divider line between card sections.
+### 6.4 `BlockKit.divider()`
+Draws a subtle horizontal divider line separating visual segments.
 ```javascript
 BlockKit.divider()
-// Output: { type: "divider" }
+// => { type: "divider" }
 ```
 
-### 5. `BlockKit.context(elements)`
-Displays smaller muted caption text or metadata at the bottom of the card.
+### 6.5 `BlockKit.context(elements)`
+Displays small, muted metadata, timestamps, or system identifiers at the bottom of the card.
 ```javascript
-BlockKit.context(["MBK DevOps Pipeline", "Run #4829"])
-// Output: { type: "context", elements: [{ type: "text", text: "MBK DevOps Pipeline" }, ...] }
+BlockKit.context(["Auto-Scaler Service", "Region: us-east-1", "Cluster #04"])
+// => { type: "context", elements: [{ type: "text", text: "Auto-Scaler Service" }, ...] }
 ```
 
-### 6. `BlockKit.actions(buttons)`
-Renders interactive call-to-action buttons. Supported button styles: `'primary'` (Teal), `'danger'` (Red), and `'default'` (Neutral).
+### 6.6 `BlockKit.actions(buttonsArray)`
+Renders interactive action buttons. Supported visual styles:
+* `primary` (Brand blue)
+* `success` (Emerald green)
+* `danger` (Crimson red)
+* `warning` (Amber yellow)
+* `outline` (Bordered transparent)
+* `default` (Subtle neutral slate)
+* `secondary` (Muted dark slate)
+
 ```javascript
 BlockKit.actions([
   {
-    text: "View Release Notes",
-    url: "https://portal.mbktech.org/dashboard/admin/app-store",
+    text: "Open Grafana Dashboard",
+    url: "https://metrics.mbktech.org/dashboard",
     style: "primary"
   },
   {
-    text: "Rollback Build",
-    url: "https://portal.mbktech.org/dashboard/admin/deploys/rollback",
-    style: "danger"
+    text: "Adjust Pool Size",
+    action_id: "scale_cluster_override",
+    style: "default"
   }
 ])
 ```
 
 ---
 
-## 5. Convenience Dispatch Methods
+## 7. Fluent Conditions & Dynamic Audience Targeting
 
-### 1. Custom Card Dispatch (`messenger.dispatch` or `messenger.sendCard`)
+While the Service Channel establishes the **maximum audience ceiling**, the `conditions` object allows callers to dynamically narrow who receives push alerts for a specific message.
+
+### 7.1 Fluent Chaining Methods
+`ServiceMessenger` provides chainable methods that merge conditions automatically into the next dispatch:
+
+```javascript
+await serviceMessenger
+  .toRoles(["admin", "superadmin"])           // Target specific roles
+  .toDesignations(["DevOps Lead", "SRE"])     // Target corporate badges
+  .toUsers(["usr_ops_lead_01"])               // Target explicit user IDs
+  .excludingUsers(["usr_system_daemon"])      // Suppress alert for triggering actor
+  .sendAlert({
+    channel: "system_status",
+    title: "Cluster Node Recycled",
+    message: "Node worker-04 rebooted following scheduled kernel patch.",
+    type: "info"
+  });
+```
+
+### 7.2 Targeting Rules & Precedence
+1. **The Safety Ceiling:** If a machine requests `toRoles(["guest"])` in `security_alerts`, `mbkcore` computes the mathematical intersection. If guests are not authorized for security alerts, **0 recipients receive alerts**.
+2. **Actor Exclusion Precedence:** `excludeUsers` strips matching user IDs before FCM push tokens are resolved. This ensures an engineer who triggered an action never receives an unwanted push notification on their own device for their own command.
+
+---
+
+## 8. High-Level Dispatch Methods
+
+### 8.1 General-Purpose Card (`sendCard`)
 ```javascript
 import { serviceMessenger, BlockKit } from "mbkutils";
 
 await serviceMessenger.sendCard({
-  channel: "governance_alerts",
-  title: "🏛️ Q4 Statutory Board Meeting",
-  content: "The quarterly Board of Directors meeting has been convened.",
-  priority: "high", // 'low' | 'normal' | 'high' | 'urgent'
-  idempotencyKey: "gov_meeting_2026_q4",
-  senderName: "Corporate Secretariat",
+  channel: "system_status",
+  title: "Worker Cluster Rebalanced",
+  content: "Traffic distribution has normalized across all regions.",
+  priority: "normal",
+  idempotencyKey: "rebalance_event_20261031_01",
+  senderName: "Traffic Manager",
   blocks: [
-    BlockKit.header("🏛️ Statutory Board Meeting Convened"),
-    BlockKit.section("Attendance is mandatory for all active voting directors. Please review the attached docket."),
+    BlockKit.header("Traffic Optimization Event"),
+    BlockKit.section("Load balancing mesh adjusted traffic weights across nodes."),
     BlockKit.fields([
-      { label: "Date & Time", value: "Nov 15, 2026 • 10:00 AM UTC" },
-      { label: "Quorum", value: "75% Confirmed" },
-      { label: "Agenda Items", value: "4 Resolutions" },
-      { label: "Location", value: "Virtual Executive Boardroom" }
+      { label: "Trigger", value: "Latency Threshold" },
+      { label: "Target Region", value: "ap-southeast-1" },
+      { label: "Average RTT", value: "24 ms (was 112 ms)" },
+      { label: "Status", value: "Optimal" }
     ]),
     BlockKit.divider(),
     BlockKit.actions([
-      { text: "Confirm Attendance", url: "https://portal.mbktech.org/governance/rsvp", style: "primary" },
-      { text: "Download Docket", url: "https://portal.mbktech.org/governance/docket.pdf", style: "default" }
+      { text: "View Edge Metrics", url: "https://metrics.mbktech.org/edge", style: "primary" }
     ]),
-    BlockKit.context(["Ref: SEC-DIR-2026-Q4", "Corporate Secretarial Office"])
+    BlockKit.context(["Traffic Controller", "Autonomous Event"])
   ]
 });
 ```
 
-### 2. High-Level System Alert (`messenger.sendAlert`)
+### 8.2 Standardized Alert (`sendAlert`)
 ```javascript
 await serviceMessenger.sendAlert({
   channel: "system_status",
   title: "Database Backup Completed",
-  message: "Daily snapshot successfully archived to S3 mbkbucket.",
+  message: "Daily snapshot successfully verified and archived to S3 storage.",
   type: "success", // 'info' | 'warning' | 'error' | 'success'
   fields: [
-    { label: "Snapshot Size", value: "4.82 GB" },
-    { label: "Duration", value: "42 seconds" }
+    { label: "Database", value: "mbkcore_prod" },
+    { label: "Archive Size", value: "14.2 GB" },
+    { label: "Verification", value: "SHA-256 Validated" }
   ]
 });
 ```
 
-### 3. Deployment Notice (`messenger.sendDeploymentNotice`)
+### 8.3 Deployment Notice (`sendDeploymentNotice`)
 ```javascript
 await serviceMessenger.sendDeploymentNotice({
-  app: "mbkcore",
-  version: "3.17.0",
+  app: "api-gateway",
+  version: "2.4.1",
   environment: "production",
-  commit: "038ede5",
+  commit: "8f2a1b9",
   status: "succeeded", // 'succeeded' | 'failed' | 'in_progress'
-  url: "https://core.mbktech.org/dashboard/admin/app-store",
-  idempotencyKey: "deploy_mbkcore_3_17_0"
+  url: "https://core.mbktech.org/dashboard/admin/deploys",
+  idempotencyKey: "deploy_api_gateway_2_4_1"
 });
 ```
 
-### 4. Task assignment notice
-```javascript
-await serviceMessenger.sendCard({
-  channelKey: "support_tickets",
-  title: "Task assigned",
-  content: "You were assigned a new work item.",
-  priority: "high",
-  conditions: { users: ["u_assignee"] },
-  blocks: [
-    BlockKit.header("Task assigned"),
-    BlockKit.section("Please review and start work."),
-    BlockKit.fields([
-      { label: "Task", value: "DNS cutover" },
-      { label: "Due", value: "2026-11-02" },
-    ]),
-    BlockKit.actions([{ text: "Open task", url: "https://portal.mbktech.org/tasks/42", style: "primary" }]),
-  ],
-});
-```
-
-### 5. Security Alert (`messenger.sendSecurityAlert`)
+### 8.4 Security Alert (`sendSecurityAlert`)
 ```javascript
 await serviceMessenger.sendSecurityAlert({
-  title: "Anomalous Login Blocked",
-  details: "Multiple invalid API token signatures detected from unverified IP address.",
-  severity: "critical", // 'low' | 'medium' | 'high' | 'critical'
-  ip: "198.51.100.44",
-  user: "u_service_agent",
-  idempotencyKey: "sec_alert_198_51_100_44_20261024"
+  title: "Multiple Failed API Key Signatures",
+  details: "Rate threshold exceeded for unauthenticated client signature verification.",
+  severity: "high", // 'low' | 'medium' | 'high' | 'critical'
+  ip: "203.0.113.195",
+  user: "unknown",
+  idempotencyKey: "sec_sig_fail_203_0_113_195"
 });
 ```
 
 ---
 
-## 6. Audience Targeting & Exclusions
+## 9. Idempotency & In-Place Card Mutation
 
-Each channel defines a default audience. Individual dispatches can **narrow** that audience with a `conditions` object on `dispatch()`, `sendCard()`, `sendAlert()`, `sendDeploymentNotice()`, and `sendSecurityAlert()`.
+To prevent duplicate alert cards from flooding chat feeds during automated retries, provide an `idempotencyKey`:
 
-### Dynamic `conditions` payload
-```javascript
-await serviceMessenger.sendAlert({
-  channel: "security_alerts",
-  title: "Anomalous Login Blocked",
-  message: "Multiple invalid API token signatures detected.",
-  type: "error",
-  conditions: {
-    roles: ["admin", "director"],
-    users: ["u_chairman"],
-    designations: ["CEO", "CTO"],
-    excludeUsers: ["u_suspended_user"],
-  },
-});
-```
-
-```json
-{
-  "conditions": {
-    "roles": ["admin", "director"],
-    "users": ["u_chairman", "u_ceo"],
-    "designations": ["CEO", "CTO"],
-    "excludeUsers": ["u_suspended_user"]
-  }
-}
-```
-
-- Channel audience is the base set (`all`, `roles`, `users`, `designations`, plus channel `exclusions`).
-- Positive `conditions` (`roles`, `users`, `designations`) further filter that set.
-- `excludeUsers` is always subtracted.
-
-### Priority levels
-`low` · `normal` · `high` · `urgent` (critical cards should use `urgent`).
-
----
-
-## 7. Idempotency & Card In-Place Updates
-
-Network retries or multi-stage pipelines often dispatch duplicate notices. By supplying an `idempotencyKey`:
-
-1. **Deduplication:** If an alert with the same `idempotencyKey` is sent within the deduplication window, `mbkcore` recognizes the key.
-2. **In-Place Updates:** Instead of polluting the chat timeline with 10 separate progress messages, long-running processes (e.g., CI/CD builds or database migrations) can use the same `idempotencyKey` across stages (`in_progress` ➔ `succeeded`):
-   - The existing Block Kit card in PostgreSQL and Cloud Firestore is updated in-place.
-   - Connected `mbkchat` clients immediately re-render the card with the new status and button actions.
+1. **Deduplication:** Repeated dispatches sharing the same key return the stored transaction receipt without creating new database rows or firing duplicate phone buzzes.
+2. **In-Place Card Updates:** You can update an existing card across pipeline steps by sending subsequent calls with the **same `idempotencyKey`**:
 
 ```javascript
-// Step 1: Initial deployment start
+// Step 1: Long-running task begins
 await serviceMessenger.sendDeploymentNotice({
-  app: "mbkcore",
-  version: "3.17.0",
+  app: "data-indexer",
+  version: "1.0.8",
   status: "in_progress",
-  idempotencyKey: "deploy_pipeline_run_9918"
+  idempotencyKey: "task_reindex_catalog_20261031"
 });
 
-// ... build & test steps run ...
+// ... Heavy migration executes ...
 
-// Step 2: Final deployment success (updates the existing card)
+// Step 2: Final state mutates the original card in-place
 await serviceMessenger.sendDeploymentNotice({
-  app: "mbkcore",
-  version: "3.17.0",
+  app: "data-indexer",
+  version: "1.0.8",
   status: "succeeded",
-  url: "https://portal.mbktech.org",
-  idempotencyKey: "deploy_pipeline_run_9918"
+  url: "https://metrics.mbktech.org/jobs",
+  idempotencyKey: "task_reindex_catalog_20261031"
 });
 ```
 
 ---
 
-## 8. Multi-Language HTTP Contract
+## 10. Multi-Language HTTP Wire Specification
 
-For non-Node.js microservices (Python, Go, Rust, PHP, Bash), communicate directly with the MBK Core HTTP endpoint:
+If dispatching from non-JavaScript languages, construct requests matching the MBK Core HTTP contract:
 
-### Endpoint Specification
-- **Method:** `POST`
-- **URL:** `https://core.mbktech.org/api/chat/channels/:channelKey/dispatch`
-- **Headers:**
-  - `Authorization: Bearer <API_TOKEN>`
-  - `Content-Type: application/json`
-  - `X-Idempotency-Key: <OPTIONAL_UNIQUE_KEY>`
+* **Endpoint:** `POST https://core.mbktech.org/api/chat/channels/:channelKey/dispatch`
+* **Headers:**
+  * `Authorization: Bearer <TOKEN>` *(or HMAC signature headers)*
+  * `Content-Type: application/json`
+  * `X-Idempotency-Key: <OPTIONAL_IDEMPOTENCY_KEY>`
 
 ---
 
-### Python Example
+### 10.1 Python
 ```python
+import os
 import requests
 
-url = "https://core.mbktech.org/api/chat/channels/build_deploys/dispatch"
+API_URL = os.getenv("MBKCORE_URL", "https://core.mbktech.org")
+TOKEN = os.getenv("MBK_SERVICE_TOKEN", "mbk_svc_your_token_here")
+
+url = f"{API_URL}/api/chat/channels/system_status/dispatch"
 headers = {
-    "Authorization": "Bearer mbk_pat_your_service_token_here",
+    "Authorization": f"Bearer {TOKEN}",
     "Content-Type": "application/json",
-    "X-Idempotency-Key": "py_deploy_mbk_api_104"
+    "X-Idempotency-Key": "py_cache_purge_20261031"
 }
 
 payload = {
-    "title": "🚀 Python API Service Deployed",
-    "content": "Inference server updated to v2.4.0.",
+    "title": "Edge Cache Purged",
+    "content": "Global CDN cache invalidated following schema release.",
     "priority": "normal",
     "blocks": [
-        {"type": "header", "text": "🚀 Python API Service Deployed"},
-        {"type": "section", "text": "Inference microservice updated with new model weights."},
+        {"type": "header", "text": "Global CDN Invalidation Finished"},
+        {"type": "section", "text": "Edge nodes successfully purged stale object records."},
         {
             "type": "fields",
             "fields": [
-                {"label": "Model", "value": "Gemini 2.5 Flash"},
-                {"label": "Throughput", "value": "1,450 req/sec"},
-                {"label": "Cluster", "value": "k8s-us-central1"}
+                {"label": "Purged Paths", "value": "/api/v2/*, /static/*"},
+                {"label": "Edge Nodes", "value": "184 Worldwide"},
+                {"label": "Execution Time", "value": "3.12 seconds"},
+                {"label": "Triggered By", "value": "PurgeDaemon v1.4"}
             ]
         },
+        {"type": "divider"},
         {
             "type": "actions",
             "elements": [
-                {"type": "button", "text": "Grafana Dashboard", "url": "https://metrics.mbktech.org", "style": "primary"}
+                {"type": "button", "text": "Inspect CDN Health", "url": "https://metrics.mbktech.org/cdn", "style": "primary"}
             ]
-        }
+        },
+        {"type": "context", "elements": [{"type": "text", "text": "CDN Sync Engine • mbkcore"}]}
     ]
 }
 
 response = requests.post(url, headers=headers, json=payload, timeout=10)
-print(response.json())
+print(response.status_code, response.json())
 ```
 
 ---
 
-### Go Example
+### 10.2 Go (Golang)
 ```go
 package main
 
@@ -416,13 +420,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 )
 
 type Block struct {
-	Type   string      `json:"type"`
-	Text   string      `json:"text,omitempty"`
-	Fields interface{} `json:"fields,omitempty"`
+	Type     string      `json:"type"`
+	Text     string      `json:"text,omitempty"`
+	Priority string      `json:"priority,omitempty"`
+	Fields   interface{} `json:"fields,omitempty"`
+	Elements interface{} `json:"elements,omitempty"`
 }
 
 type FieldItem struct {
@@ -430,31 +437,82 @@ type FieldItem struct {
 	Value string `json:"value"`
 }
 
+type ActionButton struct {
+	Type  string `json:"type"`
+	Text  string `json:"text"`
+	URL   string `json:"url,omitempty"`
+	Style string `json:"style,omitempty"`
+}
+
+type ContextItem struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
 type DispatchPayload struct {
-	Title    string  `json:"title"`
-	Content  string  `json:"content"`
-	Priority string  `json:"priority"`
-	Blocks   []Block `json:"blocks"`
+	Title          string  `json:"title"`
+	Content        string  `json:"content"`
+	Priority       string  `json:"priority"`
+	IdempotencyKey string  `json:"idempotencyKey,omitempty"`
+	Blocks         []Block `json:"blocks"`
 }
 
 func main() {
+	baseURL := os.Getenv("MBKCORE_URL")
+	if baseURL == "" {
+		baseURL = "https://core.mbktech.org"
+	}
+	token := os.Getenv("MBK_SERVICE_TOKEN")
+
+	url := fmt.Sprintf("%s/api/chat/channels/system_status/dispatch", baseURL)
+
 	payload := DispatchPayload{
-		Title:    "🚨 High Memory Warning",
-		Content:  "Worker pod reached 92% memory utilization.",
-		Priority: "high",
+		Title:          "Memory Spike Warning",
+		Content:        "Worker instance reported memory usage exceeding threshold.",
+		Priority:       "high",
+		IdempotencyKey: "go_mem_spike_pod_4",
 		Blocks: []Block{
-			{Type: "header", Text: "🚨 High Memory Warning"},
-			{Type: "fields", Fields: []FieldItem{
-				{Label: "Pod", Value: "worker-batch-7f99b"},
-				{Label: "RAM Usage", Value: "7.36 GB / 8.00 GB"},
-			}},
+			{Type: "header", Text: "System Memory Alert: Worker-4", Priority: "high"},
+			{Type: "section", Text: "Heap allocation surpassed 85% allocated limit."},
+			{
+				Type: "fields",
+				Fields: []FieldItem{
+					{Label: "Service", Value: "ingestion-daemon"},
+					{Label: "Instance ID", Value: "pod-batch-981f"},
+					{Label: "RAM Utilized", Value: "7.1 GB / 8.0 GB"},
+					{Label: "Status", Value: "Throttling"},
+				},
+			},
+			{Type: "divider"},
+			{
+				Type: "actions",
+				Elements: []ActionButton{
+					{Type: "button", Text: "Restart Pod", URL: "https://k8s.mbktech.org/restart/pod-batch-981f", Style: "danger"},
+					{Type: "button", Text: "Heap Dump", URL: "https://k8s.mbktech.org/dumps", Style: "default"},
+				},
+			},
+			{
+				Type: "context",
+				Elements: []ContextItem{
+					{Type: "text", Text: "K8s Watcher Daemon • us-east-1"},
+				},
+			},
 		},
 	}
 
-	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", "https://core.mbktech.org/api/chat/channels/system_status/dispatch", bytes.NewBuffer(body))
-	req.Header.Set("Authorization", "Bearer mbk_pat_your_service_token_here")
+	body, err := json.Marshal(payload)
+	if err != nil {
+		panic(err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		panic(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Idempotency-Key", "go_mem_spike_pod_4")
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
@@ -463,31 +521,169 @@ func main() {
 	}
 	defer resp.Body.Close()
 
-	fmt.Printf("Alert dispatched with status: %d\n", resp.StatusCode)
+	fmt.Printf("Dispatch completed with status code: %d\n", resp.StatusCode)
 }
 ```
 
 ---
 
-### cURL Example
+### 10.3 Rust
+```rust
+use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
+use serde::Serialize;
+use std::env;
+use std::error::Error;
+
+#[derive(Serialize)]
+struct FieldItem {
+    label: String,
+    value: String,
+}
+
+#[derive(Serialize)]
+struct ActionItem {
+    #[serde(rename = "type")]
+    item_type: String,
+    text: String,
+    url: String,
+    style: String,
+}
+
+#[derive(Serialize)]
+struct ContextItem {
+    #[serde(rename = "type")]
+    item_type: String,
+    text: String,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type")]
+enum Block {
+    #[serde(rename = "header")]
+    Header { text: String },
+    #[serde(rename = "section")]
+    Section { text: String },
+    #[serde(rename = "fields")]
+    Fields { fields: Vec<FieldItem> },
+    #[serde(rename = "divider")]
+    Divider,
+    #[serde(rename = "actions")]
+    Actions { elements: Vec<ActionItem> },
+    #[serde(rename = "context")]
+    Context { elements: Vec<ContextItem> },
+}
+
+#[derive(Serialize)]
+struct DispatchPayload {
+    title: String,
+    content: String,
+    priority: String,
+    #[serde(rename = "idempotencyKey")]
+    idempotency_key: String,
+    blocks: Vec<Block>,
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let base_url = env::var("MBKCORE_URL").unwrap_or_else(|_| "https://core.mbktech.org".to_string());
+    let token = env::var("MBK_SERVICE_TOKEN").unwrap_or_else(|_| "mbk_svc_your_token_here".to_string());
+
+    let endpoint = format!("{}/api/chat/channels/system_status/dispatch", base_url);
+
+    let payload = DispatchPayload {
+        title: "Dead Letter Queue Purged".to_string(),
+        content: "Asynchronous job worker processed poison-pill messages.".to_string(),
+        priority: "normal".to_string(),
+        idempotency_key: "rust_dlq_purge_8192".to_string(),
+        blocks: vec![
+            Block::Header {
+                text: "Queue Maintenance Finished".to_string(),
+            },
+            Block::Section {
+                text: "The dead letter worker successfully replayed verified payloads.".to_string(),
+            },
+            Block::Fields {
+                fields: vec![
+                    FieldItem { label: "Queue".to_string(), value: "ingest-tasks-dlq".to_string() },
+                    FieldItem { label: "Processed".to_string(), value: "1,240 items".to_string() },
+                    FieldItem { label: "Discarded".to_string(), value: "0 items".to_string() },
+                    FieldItem { label: "Runtime".to_string(), value: "8.4 seconds".to_string() },
+                ],
+            },
+            Block::Divider,
+            Block::Actions {
+                elements: vec![
+                    ActionItem {
+                        item_type: "button".to_string(),
+                        text: "View Queue Monitor".to_string(),
+                        url: "https://metrics.mbktech.org/queues".to_string(),
+                        style: "primary".to_string(),
+                    },
+                ],
+            },
+            Block::Context {
+                elements: vec![
+                    ContextItem {
+                        item_type: "text".to_string(),
+                        text: "Async Worker Service • Rust 1.80".to_string(),
+                    },
+                ],
+            },
+        ],
+    };
+
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_str(&format!("Bearer {}", token))?);
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert("X-Idempotency-Key", HeaderValue::from_static("rust_dlq_purge_8192"));
+
+    let client = reqwest::Client::new();
+    let res = client
+        .post(&endpoint)
+        .headers(headers)
+        .json(&payload)
+        .send()
+        .await?;
+
+    println!("Response status: {}", res.status());
+    Ok(())
+}
+```
+
+---
+
+### 10.4 cURL
 ```bash
 curl -X POST "https://core.mbktech.org/api/chat/channels/system_status/dispatch" \
-  -H "Authorization: Bearer mbk_pat_your_service_token_here" \
+  -H "Authorization: Bearer mbk_svc_your_token_here" \
   -H "Content-Type: application/json" \
-  -H "X-Idempotency-Key: backup_daily_20261024" \
+  -H "X-Idempotency-Key: manual_curl_check_001" \
   -d '{
-    "title": "✅ Snapshot Backup Succeeded",
-    "content": "PostgreSQL daily backup verified and replicated.",
+    "title": "System Audit Event",
+    "content": "Routine health check executed from terminal.",
     "priority": "normal",
     "blocks": [
-      { "type": "header", "text": "✅ Snapshot Backup Succeeded" },
-      { "type": "section", "text": "Neon PostgreSQL backup snapshot committed to S3 cold storage." },
+      { "type": "header", "text": "Platform Health Check" },
+      { "type": "section", "text": "Diagnostic ping verified all upstream services are operational." },
       {
         "type": "fields",
         "fields": [
-          { "label": "Database", "value": "mbkcore_prod" },
-          { "label": "Archive Size", "value": "12.4 GB" },
-          { "label": "Verification", "value": "SHA-256 Passed" }
+          { "label": "Origin", "value": "Ops CLI Workstation" },
+          { "label": "Latency", "value": "12 ms" },
+          { "label": "Status", "value": "All Systems Nominal" }
+        ]
+      },
+      { "type": "divider" },
+      {
+        "type": "actions",
+        "elements": [
+          { "type": "button", "text": "System Status Page", "url": "https://status.mbktech.org", "style": "primary" }
+        ]
+      },
+      {
+        "type": "context",
+        "elements": [
+          { "type": "text", "text": "Diagnostic CLI v1.2 • Operations" }
         ]
       }
     ]
@@ -496,4 +692,73 @@ curl -X POST "https://core.mbktech.org/api/chat/channels/system_status/dispatch"
 
 ---
 
-*Universal Service Messenger Documentation • mbkutils v1.2.0 • MBK Technologies Inc.*
+## 11. Complete End-to-End Node.js Implementation Example
+
+```javascript
+import { ServiceMessenger, BlockKit } from "mbkutils";
+
+// 1. Initialize client using Bearer token or HMAC credentials
+const messenger = new ServiceMessenger({
+  baseUrl: process.env.MBKCORE_URL || "https://core.mbktech.org",
+  serviceId: "srv_metrics_collector",
+  secret: process.env.MBK_SERVICE_SECRET, // e.g. "mbk_svc_xxxxxxxx"
+  defaultChannel: "system_status"
+});
+
+async function main() {
+  try {
+    console.log("[Service] Dispatching card to system_status channel...");
+
+    // 2. Dispatch Block Kit card targeting specific staff roles
+    const receipt = await messenger
+      .toRoles(["superadmin", "admin"])
+      .excludingUsers(["usr_system_daemon"])
+      .sendCard({
+        channel: "system_status",
+        title: "Automated Maintenance Window Complete",
+        content: "Index defragmentation and vacuum completed across database shards.",
+        priority: "normal",
+        idempotencyKey: `maint_window_run_${Date.now()}`,
+        senderName: "Maintenance Agent",
+        blocks: [
+          BlockKit.header("Database Maintenance Finished", "normal"),
+          BlockKit.section("Automated nightly indexing completed across all live partitions."),
+          BlockKit.fields([
+            { label: "Target Shard", value: "db-cluster-primary" },
+            { label: "Tables Analyzed", value: "142 tables" },
+            { label: "Reclaimed Storage", value: "4.8 GB" },
+            { label: "Elapsed Time", value: "42 seconds" }
+          ]),
+          BlockKit.divider(),
+          BlockKit.actions([
+            {
+              text: "Database Metrics",
+              url: "https://metrics.mbktech.org/postgres",
+              style: "primary"
+            },
+            {
+              text: "Acknowledge",
+              action_id: "ack_maint_complete",
+              style: "default"
+            }
+          ]),
+          BlockKit.context(["Scheduled Maintenance", "Host: db-ops-runner-01"])
+        ]
+      });
+
+    console.log("[Service] Dispatched successfully!");
+    console.log("  • Message ID:", receipt.messageId);
+    console.log("  • Channel Room:", receipt.roomId);
+    console.log("  • Recipients Notified:", receipt.recipientCount);
+
+  } catch (err) {
+    console.error("[Service] Dispatch failed:", err.message);
+  }
+}
+
+main();
+```
+
+---
+
+*Universal Service Messenger Documentation • `mbkutils` v1.2.2 • Developed by [Maaz Waheed](https://github.com/42Wor)* [1]

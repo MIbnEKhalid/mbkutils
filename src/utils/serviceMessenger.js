@@ -13,14 +13,121 @@ const VALID_BUTTON_STYLES = [
   "secondary",
 ];
 
+const VALID_BADGE_TONES = ["neutral", "info", "success", "warning", "danger"];
+
+const VALID_CARD_TONES = [
+  "normal",
+  "important",
+  "critical",
+  "info",
+  "success",
+  "warning",
+  "danger",
+];
+
+function normalizeBadge(item) {
+  if (typeof item === "string") {
+    return { text: item.trim(), tone: "neutral" };
+  }
+  const rawTone = String(item?.tone || "neutral").toLowerCase().trim();
+  const tone = VALID_BADGE_TONES.includes(rawTone) ? rawTone : "neutral";
+  return {
+    text: String(item?.text ?? item?.label ?? "").trim(),
+    tone,
+  };
+}
+
+function normalizeSelect(el) {
+  const actionId = el?.action_id || el?.actionId;
+  const options = Array.isArray(el?.options)
+    ? el.options.map((opt) => {
+        const mapped = {
+          label: String(opt?.label ?? opt?.text ?? opt?.value ?? "").trim(),
+          value: opt?.value !== undefined && opt?.value !== null ? String(opt.value) : "",
+        };
+        if (opt?.tone) {
+          const t = String(opt.tone).toLowerCase().trim();
+          mapped.tone = VALID_BADGE_TONES.includes(t) ? t : "neutral";
+        }
+        return mapped;
+      })
+    : [];
+
+  const select = {
+    type: "select",
+    action_id: actionId ? String(actionId).trim() : null,
+    options,
+  };
+  if (el?.placeholder) select.placeholder = String(el.placeholder);
+  const initial = el?.initial_value ?? el?.initialValue;
+  if (initial !== undefined && initial !== null) {
+    select.initial_value = String(initial);
+  }
+  return select;
+}
+
+function normalizeButton(btn) {
+  const rawStyle = String(btn?.style || "default").toLowerCase();
+  const style = VALID_BUTTON_STYLES.includes(rawStyle) ? rawStyle : "default";
+  const actionId = btn?.action_id || btn?.actionId;
+  const text = String(btn?.text || "Open").trim();
+  const out = {
+    type: "button",
+    text: text || "Open",
+    url: btn?.url ? String(btn.url) : null,
+    action_id: actionId ? String(actionId).trim() : null,
+    style,
+    icon: btn?.icon ? String(btn.icon) : null,
+  };
+
+  if (btn?.value !== undefined && btn?.value !== null) {
+    out.value = btn.value;
+  }
+  if (btn?.confirm && typeof btn.confirm === "object") {
+    const confirm = {
+      title: String(btn.confirm.title || "Confirm Action"),
+      message: String(btn.confirm.message || ""),
+    };
+    if (btn.confirm.confirmLabel) confirm.confirmLabel = String(btn.confirm.confirmLabel);
+    if (btn.confirm.cancelLabel) confirm.cancelLabel = String(btn.confirm.cancelLabel);
+    out.confirm = confirm;
+  }
+  if (btn?.prompt && typeof btn.prompt === "object") {
+    const prompt = {
+      title: String(btn.prompt.title || "Provide Details"),
+    };
+    if (btn.prompt.placeholder) prompt.placeholder = String(btn.prompt.placeholder);
+    if (btn.prompt.required !== undefined) prompt.required = Boolean(btn.prompt.required);
+    if (btn.prompt.submitLabel) prompt.submitLabel = String(btn.prompt.submitLabel);
+    out.prompt = prompt;
+  }
+  if (btn?.require_ack !== undefined || btn?.requireAck !== undefined) {
+    out.require_ack = Boolean(btn.require_ack ?? btn.requireAck);
+  }
+  return out;
+}
+
 /**
  * Block Kit Helper Functions
  */
 export const BlockKit = {
-  header(text, priority = null) {
+  header(text, priority = null, badge = null) {
     const block = { type: "header", text: String(text || "") };
     if (priority) block.priority = String(priority);
+    if (badge) {
+      if (Array.isArray(badge)) {
+        block.badges = badge.map(normalizeBadge);
+      } else {
+        block.badge = normalizeBadge(badge);
+      }
+    }
     return block;
+  },
+  badges(items) {
+    return {
+      type: "badges",
+      items: (Array.isArray(items) ? items : []).map(normalizeBadge),
+    };
   },
   section(text, fields = null) {
     const block = { type: "section", text: String(text || "") };
@@ -53,28 +160,22 @@ export const BlockKit = {
       }),
     };
   },
-  actions(buttonsArray) {
+  select(options = {}) {
+    return normalizeSelect(options);
+  },
+  actions(elementsArray) {
     return {
       type: "actions",
-      elements: (buttonsArray || []).map((btn) => {
-        const rawStyle = String(btn?.style || "default").toLowerCase();
-        const style = VALID_BUTTON_STYLES.includes(rawStyle) ? rawStyle : "default";
-        const actionId = btn?.action_id || btn?.actionId;
-        const text = String(btn?.text || "Open").trim();
-        return {
-          type: "button",
-          text: text || "Open",
-          url: btn?.url ? String(btn.url) : null,
-          action_id: actionId ? String(actionId).trim() : null,
-          style,
-          icon: btn?.icon ? String(btn.icon) : null,
-        };
-      }),
+      elements: (elementsArray || []).map((el) =>
+        el?.type === "select" ? normalizeSelect(el) : normalizeButton(el),
+      ),
     };
   },
 };
 
 export const BLOCK_KIT_STYLES = [...VALID_BUTTON_STYLES];
+export const BLOCK_KIT_TONES = [...VALID_BADGE_TONES];
+export const BLOCK_KIT_CARD_TONES = [...VALID_CARD_TONES];
 
 function env(name) {
   return typeof process !== "undefined" ? process.env?.[name] : undefined;
@@ -139,7 +240,7 @@ export class ServiceMessenger {
 
     this.serviceId = options.serviceId || env("MBK_SERVICE_ID") || "mbkutils";
     this.token = this.secret;
-    this.defaultChannel = options.defaultChannel || "system_status";
+    this.defaultChannel = options.defaultChannel || "system";
     this.timeout = options.timeout || 10000;
   }
 
@@ -194,6 +295,24 @@ export class ServiceMessenger {
     return this;
   }
 
+  /**
+   * Restrict visibility of the next dispatched card to specific user IDs
+   * inside shared channels (e.g. #tasks) without mutating channel rules.
+   */
+  visibleTo(usersArray) {
+    this._pendingVisibleToUsers = Array.isArray(usersArray) ? usersArray.filter(Boolean) : [];
+    return this;
+  }
+
+  /**
+   * Specify which user IDs should receive unread/push notifications for the
+   * next dispatched card (so e.g. the creator is not pinged for their own task).
+   */
+  notify(usersArray) {
+    this._pendingNotifyUsers = Array.isArray(usersArray) ? usersArray.filter(Boolean) : [];
+    return this;
+  }
+
   async dispatch({
     channel = null,
     channelKey = null,
@@ -201,7 +320,12 @@ export class ServiceMessenger {
     content = "",
     blocks = null,
     priority = "normal",
+    tone = null,
     conditions = null,
+    visibleToUsers = null,
+    notifyUsers = null,
+    requireAck = null,
+    expiresAt = null,
     idempotencyKey = null,
     senderName = null,
     mediaUrl = null,
@@ -215,14 +339,24 @@ export class ServiceMessenger {
       this._pendingConditions || conditions
         ? { ...(this._pendingConditions || {}), ...(conditions || {}) }
         : undefined;
+    const resolvedVisibleToUsers = visibleToUsers ?? this._pendingVisibleToUsers ?? undefined;
+    const resolvedNotifyUsers = notifyUsers ?? this._pendingNotifyUsers ?? undefined;
+
     this._pendingConditions = null;
+    this._pendingVisibleToUsers = null;
+    this._pendingNotifyUsers = null;
 
     const payload = {
       title,
       content,
       blocks,
       priority,
+      ...(tone ? { tone: String(tone).toLowerCase() } : {}),
       conditions: mergedConditions || undefined,
+      ...(Array.isArray(resolvedVisibleToUsers) ? { visibleToUsers: resolvedVisibleToUsers } : {}),
+      ...(Array.isArray(resolvedNotifyUsers) ? { notifyUsers: resolvedNotifyUsers } : {}),
+      ...(requireAck !== null && requireAck !== undefined ? { requireAck: Boolean(requireAck) } : {}),
+      ...(expiresAt ? { expiresAt: String(expiresAt) } : {}),
       idempotencyKey,
       senderName,
       mediaUrl,
@@ -269,7 +403,12 @@ export class ServiceMessenger {
     content,
     blocks = [],
     priority = "normal",
+    tone = null,
     conditions = null,
+    visibleToUsers = null,
+    notifyUsers = null,
+    requireAck = null,
+    expiresAt = null,
     idempotencyKey = null,
     senderName = null,
   } = {}) {
@@ -280,21 +419,31 @@ export class ServiceMessenger {
       content,
       blocks,
       priority,
+      tone,
       conditions,
+      visibleToUsers,
+      notifyUsers,
+      requireAck,
+      expiresAt,
       idempotencyKey,
       senderName,
     });
   }
 
   async sendAlert({
-    channel = "system_status",
+    channel = "system",
     channelKey = null,
     title,
     message,
     type = "info",
     priority = "normal",
+    tone = null,
     fields = [],
     conditions = null,
+    visibleToUsers = null,
+    notifyUsers = null,
+    requireAck = null,
+    expiresAt = null,
     idempotencyKey = null,
   } = {}) {
     const icon = type === "error" ? "🚨" : type === "warning" ? "⚠️" : type === "success" ? "✅" : "ℹ️";
@@ -314,7 +463,12 @@ export class ServiceMessenger {
       content: message,
       blocks,
       priority: type === "error" ? "urgent" : type === "warning" ? "high" : priority,
+      tone,
       conditions,
+      visibleToUsers,
+      notifyUsers,
+      requireAck,
+      expiresAt,
       idempotencyKey,
     });
   }

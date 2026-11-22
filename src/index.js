@@ -114,6 +114,8 @@ export {
 export {
   BlockKit,
   BLOCK_KIT_STYLES,
+  BLOCK_KIT_TONES,
+  BLOCK_KIT_CARD_TONES,
   ServiceMessenger,
   serviceMessenger,
   buildServiceDispatchHeaders,

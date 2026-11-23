@@ -132,20 +132,30 @@ export const BlockKit = {
   section(text, fields = null) {
     const block = { type: "section", text: String(text || "") };
     if (Array.isArray(fields) && fields.length > 0) {
-      block.fields = fields.map((f) => ({
-        label: String(f?.label || ""),
-        value: String(f?.value || ""),
-      }));
+      block.fields = fields.map((f) => {
+        const out = {
+          label: String(f?.label || ""),
+          value: String(f?.value || ""),
+        };
+        if (f?.short !== undefined) out.short = Boolean(f.short);
+        if (f?.title !== undefined) out.title = String(f.title);
+        return out;
+      });
     }
     return block;
   },
   fields(fieldsArray) {
     return {
       type: "fields",
-      fields: (fieldsArray || []).map((f) => ({
-        label: String(f?.label || ""),
-        value: String(f?.value || ""),
-      })),
+      fields: (fieldsArray || []).map((f) => {
+        const out = {
+          label: String(f?.label || ""),
+          value: String(f?.value || ""),
+        };
+        if (f?.short !== undefined) out.short = Boolean(f.short);
+        if (f?.title !== undefined) out.title = String(f.title);
+        return out;
+      }),
     };
   },
   divider() {
@@ -507,7 +517,7 @@ export class ServiceMessenger {
     }
 
     return this.dispatch({
-      channel: "build_deploys",
+      channel: "devops",
       title: headerTitle,
       content: `Deployment of ${app} v${version} to ${environment} ${status}.`,
       blocks,
@@ -540,7 +550,7 @@ export class ServiceMessenger {
     ];
 
     return this.dispatch({
-      channel: "security_alerts",
+      channel: "security",
       title: headerTitle,
       content: details,
       blocks,

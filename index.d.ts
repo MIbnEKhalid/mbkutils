@@ -297,43 +297,141 @@ export interface MbkUtils {
   isExpired: typeof isExpired;
   isOverdue: typeof isOverdue;
   formatDuration: typeof formatDuration;
+  BLOCK_KIT_STYLES: string[];
+  BLOCK_KIT_TONES: BlockKitTone[];
+  BLOCK_KIT_CARD_TONES: BlockKitCardTone[];
   BlockKit: typeof BlockKit;
   ServiceMessenger: typeof ServiceMessenger;
   serviceMessenger: ServiceMessenger;
+  buildServiceDispatchHeaders: typeof buildServiceDispatchHeaders;
+}
+
+export interface BlockKitBadge {
+  text: string;
+  tone?: BlockKitTone;
+}
+
+export interface BlockKitButtonConfirm {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+}
+
+export interface BlockKitButtonPrompt {
+  title: string;
+  placeholder?: string;
+  required?: boolean;
+  submitLabel?: string;
+}
+
+export interface BlockKitSelectOption {
+  label: string;
+  value: string;
+  tone?: BlockKitTone;
+}
+
+export interface BlockKitSelectElement {
+  type?: "select";
+  action_id?: string | null;
+  actionId?: string | null;
+  placeholder?: string;
+  initial_value?: string | null;
+  initialValue?: string | null;
+  options: BlockKitSelectOption[];
+}
+
+export interface BlockKitButtonElement {
+  type?: "button";
+  text: string;
+  url?: string | null;
+  action_id?: string | null;
+  actionId?: string | null;
+  style?: BlockKitButtonStyle;
+  icon?: string | null;
+  value?: string | number | boolean | null;
+  confirm?: BlockKitButtonConfirm;
+  prompt?: BlockKitButtonPrompt;
+  require_ack?: boolean;
+  requireAck?: boolean;
 }
 
 export interface BlockKitBlock {
   type: string;
   text?: string;
+  priority?: string;
+  badge?: BlockKitBadge;
+  badges?: BlockKitBadge[];
+  items?: BlockKitBadge[];
   fields?: Array<{ label: string; value: string }>;
   elements?: any[];
+  action_id?: string | null;
+  placeholder?: string;
+  initial_value?: string;
+  options?: BlockKitSelectOption[];
+}
+
+export type BlockKitButtonStyle = "primary" | "danger" | "warning" | "success" | "outline" | "default" | "secondary";
+export type BlockKitTone = "neutral" | "info" | "success" | "warning" | "danger";
+export type BlockKitCardTone = "normal" | "important" | "critical" | "info" | "success" | "warning" | "danger";
+
+export interface DispatchConditions {
+  roles?: string[];
+  users?: string[];
+  designations?: string[];
+  excludeUsers?: string[];
 }
 
 export declare const BlockKit: {
-  header(text: string): BlockKitBlock;
+  header(
+    text: string,
+    priority?: string | null,
+    badge?: string | BlockKitBadge | Array<string | BlockKitBadge> | null,
+  ): BlockKitBlock;
+  badges(items: Array<string | BlockKitBadge>): BlockKitBlock;
   section(text: string, fields?: Array<{ label: string; value: string }>): BlockKitBlock;
   fields(fieldsArray: Array<{ label: string; value: string }>): BlockKitBlock;
   divider(): BlockKitBlock;
   context(elements: Array<string | { type: string; text: string }>): BlockKitBlock;
-  actions(elements: Array<{ text: string; url?: string | null; action_id?: string | null; style?: "primary" | "danger" | "default" }>): BlockKitBlock;
+  select(options: BlockKitSelectElement): BlockKitBlock;
+  actions(elements: Array<BlockKitButtonElement | BlockKitSelectElement>): BlockKitBlock;
 };
 
 export interface ServiceMessengerOptions {
   baseUrl?: string;
   apiKey?: string;
   token?: string;
+  secret?: string;
+  serviceId?: string;
   defaultChannel?: string;
   timeout?: number;
 }
 
+export declare function buildServiceDispatchHeaders(options: {
+  secret?: string | null;
+  serviceId?: string | null;
+  rawBody?: string;
+  idempotencyKey?: string | null;
+}): Record<string, string>;
+
 export declare class ServiceMessenger {
   baseUrl: string;
   token: string | null;
+  secret: string | null;
+  serviceId: string;
   defaultChannel: string;
   timeout: number;
   constructor(options?: ServiceMessengerOptions);
   setToken(token: string): this;
+  setSecret(secret: string): this;
+  setServiceId(serviceId: string): this;
   setBaseUrl(url: string): this;
+  toRoles(rolesArray: string[]): this;
+  toUsers(usersArray: string[]): this;
+  toDesignations(designationsArray: string[]): this;
+  excludingUsers(excludeArray: string[]): this;
+  visibleTo(usersArray: string[]): this;
+  notify(usersArray: string[]): this;
   dispatch(options: {
     channel?: string | null;
     channelKey?: string | null;
@@ -341,6 +439,12 @@ export declare class ServiceMessenger {
     content?: string;
     blocks?: BlockKitBlock[] | null;
     priority?: "low" | "normal" | "high" | "urgent";
+    tone?: BlockKitCardTone | null;
+    conditions?: DispatchConditions | null;
+    visibleToUsers?: string[] | null;
+    notifyUsers?: string[] | null;
+    requireAck?: boolean | null;
+    expiresAt?: string | null;
     idempotencyKey?: string | null;
     senderName?: string | null;
     mediaUrl?: string | null;
@@ -348,21 +452,35 @@ export declare class ServiceMessenger {
   }): Promise<any>;
   sendCard(options: {
     channel?: string;
+    channelKey?: string;
     title?: string;
     content?: string;
     blocks?: BlockKitBlock[];
     priority?: "low" | "normal" | "high" | "urgent";
+    tone?: BlockKitCardTone | null;
+    conditions?: DispatchConditions | null;
+    visibleToUsers?: string[] | null;
+    notifyUsers?: string[] | null;
+    requireAck?: boolean | null;
+    expiresAt?: string | null;
     idempotencyKey?: string | null;
     senderName?: string | null;
   }): Promise<any>;
   sendAlert(options: {
     channel?: string;
+    channelKey?: string;
     title?: string;
     message: string;
     type?: "info" | "warning" | "error" | "success";
     priority?: "low" | "normal" | "high" | "urgent";
-    idempotencyKey?: string | null;
+    tone?: BlockKitCardTone | null;
     fields?: Array<{ label: string; value: string }>;
+    conditions?: DispatchConditions | null;
+    visibleToUsers?: string[] | null;
+    notifyUsers?: string[] | null;
+    requireAck?: boolean | null;
+    expiresAt?: string | null;
+    idempotencyKey?: string | null;
   }): Promise<any>;
   sendDeploymentNotice(options: {
     app: string;
@@ -371,6 +489,7 @@ export declare class ServiceMessenger {
     commit?: string | null;
     status?: "succeeded" | "failed" | "in_progress";
     url?: string | null;
+    conditions?: DispatchConditions | null;
     idempotencyKey?: string | null;
   }): Promise<any>;
   sendSecurityAlert(options: {
@@ -379,6 +498,7 @@ export declare class ServiceMessenger {
     severity?: "low" | "medium" | "high" | "critical";
     ip?: string | null;
     user?: string | null;
+    conditions?: DispatchConditions | null;
     idempotencyKey?: string | null;
   }): Promise<any>;
 }

@@ -113,8 +113,12 @@ export {
 // 9. Service Messenger & Block Kit Engine
 export {
   BlockKit,
+  BLOCK_KIT_STYLES,
+  BLOCK_KIT_TONES,
+  BLOCK_KIT_CARD_TONES,
   ServiceMessenger,
   serviceMessenger,
+  buildServiceDispatchHeaders,
 } from "./utils/serviceMessenger.js";
 
 // 10. Default aggregated export object
@@ -165,7 +169,7 @@ import {
   isOverdue,
   formatDuration,
 } from "./utils/dateTime.js";
-import { BlockKit, ServiceMessenger, serviceMessenger } from "./utils/serviceMessenger.js";
+import { BlockKit, BLOCK_KIT_STYLES, BLOCK_KIT_TONES, BLOCK_KIT_CARD_TONES, ServiceMessenger, serviceMessenger, buildServiceDispatchHeaders } from "./utils/serviceMessenger.js";
 
 export const mbkutils = {
   isJsonRequest,
@@ -224,8 +228,12 @@ export const mbkutils = {
   isOverdue,
   formatDuration,
   BlockKit,
+  BLOCK_KIT_STYLES,
+  BLOCK_KIT_TONES,
+  BLOCK_KIT_CARD_TONES,
   ServiceMessenger,
   serviceMessenger,
+  buildServiceDispatchHeaders,
 };
 
 export default mbkutils;
